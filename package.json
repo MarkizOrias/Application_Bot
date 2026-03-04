@@ -12,8 +12,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "anthropic": "^0.0.0",
-    "axios": "^1.13.6",
+"axios": "^1.13.6",
     "better-sqlite3": "^9.6.0",
     "cheerio": "^1.2.0",
     "docx": "^8.5.0",

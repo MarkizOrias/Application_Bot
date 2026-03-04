@@ -9,7 +9,7 @@ import { linkedinAdapter }    from "../adapters/linkedin.js";
 import { greenhouseAdapter }  from "../adapters/greenhouse.js";
 import { leverAdapter }       from "../adapters/lever.js";
 import { genericAdapter }     from "../adapters/generic.js";
-import config from "../../config/profile.json" assert { type: "json" };
+import config from "../../config/profile.json" with { type: "json" };
 
 type SubmitArgs = {
   application_id: string;
@@ -52,7 +52,7 @@ export async function submitApplicationTool(
     if (adapterResult.success) {
       const now = new Date().toISOString();
       db.updateStatus(args.application_id, "submitted", { submitted_at: now });
-      return ok(`✅ Submitted — ${app.company} · ${app.role}`);
+      return ok(`Submitted — ${app.company} · ${app.role}`);
     } else {
       db.updateStatus(args.application_id, "error", { error_message: adapterResult.error });
       return err(`Adapter error: ${adapterResult.error}`);
@@ -106,7 +106,7 @@ async function handleCaptcha(
   if (resumeResult.success) {
     const now = new Date().toISOString();
     db.updateStatus(args.application_id, "submitted", { submitted_at: now });
-    return ok(`✅ Submitted (after CAPTCHA) — ${app.company} · ${app.role}`);
+    return ok(`Submitted (after CAPTCHA) — ${app.company} · ${app.role}`);
   } else {
     db.updateStatus(args.application_id, "error", { error_message: resumeResult.error });
     return err(`Resume failed: ${resumeResult.error}`);

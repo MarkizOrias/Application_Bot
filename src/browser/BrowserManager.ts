@@ -38,7 +38,7 @@ export class BrowserManager {
           "--no-default-browser-check",
         ],
         // Mimic a real user agent
-        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
       }
     );
 
@@ -128,7 +128,7 @@ export class BrowserManager {
   // ── Scrape text content cleanly ───────────────────────────────────────────
   async scrapeText(page: Page, selector: string): Promise<string> {
     try {
-      return await page.locator(selector).innerText({ timeout: 5000 });
+      return await page.locator(selector).first().innerText({ timeout: 5000 });
     } catch {
       return "";
     }

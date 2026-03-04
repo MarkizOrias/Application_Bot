@@ -8,8 +8,6 @@ Versatile Engineering Professional with over 7 years of experience delivering sc
 
 ## SKILLS
 
-# SKILLS
-
 **Operations & Finance:** Securities Reconciliation, Trade Support & Settlement, Cash Reconciliation, Contra Revenue, Invoice & Expense Processing, Corporate Actions, NAV Calculation, SWIFT MT54X/MT586, STP Optimisation
 **Technical:** Python, JavaScript, CSS, HTML, Solidity, Excel VBA Macros, Alteryx Workflows, Git (GitLab & GitHub), Responsive Web Development, Blockchain Smart Contracts, Web3 DApp Development
 **Methodology:** Agile, Process Automation, Risk Control Frameworks, Audit Documentation, Data Analysis & Reporting, Parametric Optimisation, Trading Strategy Backtesting

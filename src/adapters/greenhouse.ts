@@ -95,7 +95,9 @@ async function answerCustomQuestions(page: Page, profile: any, browser: BrowserM
     const labelLower = label.toLowerCase();
 
     if (labelLower.includes("country") || labelLower.includes("location")) {
-      await sel.selectOption({ label: "United Kingdom" }).catch(() => {});
+      await sel.selectOption({ label: "Switzerland" }).catch(() =>
+        sel.selectOption({ label: "United Kingdom" }).catch(() => {})
+      );
     } else if (labelLower.includes("experience")) {
       await sel.selectOption({ index: 3 }).catch(() => {});  // typically "5+ years"
     }

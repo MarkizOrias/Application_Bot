@@ -1,5 +1,5 @@
 // src/index.ts  — MCP Server entry point
-// Run via: node src/index.js  (compiled) or ts-node src/index.ts
+// Run via: node dist/index.js  (compiled) or ts-node --esm src/index.ts
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -13,7 +13,7 @@ import { tailorCVTool }           from "./tools/tailorCV.js";
 import { submitApplicationTool }  from "./tools/submitApplication.js";
 import { checkCaptchaStatusTool } from "./tools/checkCaptchaStatus.js";
 import { listApplicationsTool }   from "./tools/listApplications.js";
-import config from "../config/profile.json" assert { type: "json" };
+import config from "../config/profile.json" with { type: "json" };
 
 // ─── Singletons shared across all tool calls ──────────────────────────────────
 export const browser  = new BrowserManager(config.browser);
@@ -106,7 +106,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   try {
     switch (name) {
-      case "search_jobs":          return await searchJobsTool(args as any);
+      case "search_jobs":          return await searchJobsTool(args as any, browser);
       case "get_job_details":      return await getJobDetailsTool(args as any, browser);
       case "tailor_cv":            return await tailorCVTool(args as any, db);
       case "submit_application":   return await submitApplicationTool(args as any, browser, notifier, db);

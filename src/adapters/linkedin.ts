@@ -101,7 +101,6 @@ async function fillIfVisible(page: Page, browser: BrowserManager, selector: stri
 // Common yes/no questions LinkedIn jobs ask:
 // "Are you comfortable working remotely?", "Are you authorized to work in [country]?"
 async function answerRadioQuestions(page: Page, profile: any) {
-  // Get all fieldsets with radio buttons
   const fieldsets = page.locator("fieldset");
   const count = await fieldsets.count();
 
@@ -109,7 +108,6 @@ async function answerRadioQuestions(page: Page, profile: any) {
     const fs = fieldsets.nth(i);
     const legend = await fs.locator("legend").first().innerText().catch(() => "");
 
-    // Default strategy: pick "Yes" for authorization/remote questions
     const legLower = legend.toLowerCase();
     if (legLower.includes("authorized") || legLower.includes("legally") ||
         legLower.includes("remote")     || legLower.includes("legally eligible")) {
@@ -133,9 +131,9 @@ async function answerTextQuestions(page: Page, profile: any, browser: BrowserMan
 
     let answer = "";
     if (labelLower.includes("salary") || labelLower.includes("compensation")) {
-      answer = String(profile.min_salary_gbp ?? "");
+      answer = String(profile.min_salary_usd ?? profile.min_salary_gbp ?? "");
     } else if (labelLower.includes("years") && labelLower.includes("experience")) {
-      answer = "5";  // adjust to your actual experience
+      answer = "7";
     } else if (labelLower.includes("notice") || labelLower.includes("availability")) {
       answer = "2 weeks";
     } else if (labelLower.includes("linkedin")) {

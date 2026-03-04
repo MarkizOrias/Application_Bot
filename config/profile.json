@@ -64,7 +64,7 @@
     ]
   },
   "browser": {
-    "chrome_profile_path": "/Users/Georgi/AppData/Local/Google/Chrome/User Data/Default",
+    "chrome_profile_path": "C:\\Users\\Georgi\\AppData\\Local\\Google\\Chrome\\User Data\\Default",
     "headless": false,
     "slow_mo_ms": 120
   },

@@ -5,7 +5,7 @@
 // We Work Remotely & Himalayas: lightweight HTML scraping.
 
 import axios from "axios";
-import { chromium } from "playwright";
+import { BrowserManager } from "../browser/BrowserManager.js";
 
 type SearchArgs = {
   query: string;
@@ -22,14 +22,14 @@ type JobListing = {
   tags?: string[];
 };
 
-export async function searchJobsTool(args: SearchArgs) {
+export async function searchJobsTool(args: SearchArgs, browser: BrowserManager) {
   const { query, max_results = 10, sources = ["remotive", "weworkremotely", "linkedin", "himalayas"] } = args;
   const results: JobListing[] = [];
 
   const fetchers: Record<string, () => Promise<JobListing[]>> = {
     remotive:       () => fetchRemotive(query, max_results),
     weworkremotely: () => fetchWWR(query, max_results),
-    linkedin:       () => fetchLinkedIn(query, max_results),
+    linkedin:       () => fetchLinkedIn(query, max_results, browser),
     himalayas:      () => fetchHimalayas(query, max_results),
     adzuna:         () => fetchAdzuna(query, max_results),
   };
@@ -86,7 +86,6 @@ async function fetchWWR(query: string, limit: number): Promise<JobListing[]> {
     timeout: 10_000,
   });
 
-  // Parse out job listings from the RSS-like structure
   const matches = [...res.data.matchAll(/<li class="feature"[\s\S]*?<a href="(.*?)"[\s\S]*?<span class="title">(.*?)<\/span>[\s\S]*?<span class="company">(.*?)<\/span>/g)];
 
   return matches.slice(0, limit).map(([, href, title, company]) => ({
@@ -98,21 +97,13 @@ async function fetchWWR(query: string, limit: number): Promise<JobListing[]> {
   }));
 }
 
-// ── LinkedIn Easy Apply search (uses your logged-in profile) ─────────────────
+// ── LinkedIn Easy Apply search (uses the shared logged-in BrowserManager) ────
 // Constructs a URL with remote + Easy Apply filters, scrapes listings.
-async function fetchLinkedIn(query: string, limit: number): Promise<JobListing[]> {
-  // LinkedIn search URL params:
-  //   keywords=...  &  f_WT=2 (remote)  &  f_AL=true (Easy Apply)
+async function fetchLinkedIn(query: string, limit: number, browser: BrowserManager): Promise<JobListing[]> {
+  // f_WT=2 → remote  |  f_AL=true → Easy Apply only  |  sortBy=DD → most recent
   const searchUrl = `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(query)}&f_WT=2&f_AL=true&sortBy=DD`;
 
-  // Note: BrowserManager singleton isn't available here — we open a lightweight page
-  // The real implementation passes `browser` as a dependency.
-  // For simplicity this sketch opens a brief Playwright session.
-  // In production, call browser.goto() instead.
-
-  const browser = await chromium.launch({ headless: false, channel: "chrome" });
-  const page = await browser.newPage();
-  await page.goto(searchUrl, { waitUntil: "domcontentloaded" });
+  const page = await browser.goto(searchUrl);
   await page.waitForTimeout(2000);
 
   const jobs = await page.evaluate((lim) => {
@@ -126,7 +117,6 @@ async function fetchLinkedIn(query: string, limit: number): Promise<JobListing[]
     }));
   }, limit);
 
-  await browser.close();
   return jobs.filter((j) => j.url);
 }
 

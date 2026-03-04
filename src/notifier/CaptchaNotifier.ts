@@ -3,7 +3,6 @@
 // Tracks hold/resolve state per application_id.
 
 import notifier from "node-notifier";
-import * as path from "path";
 
 interface NotifierConfig {
   platform: "auto" | "macos" | "windows" | "linux";
@@ -33,13 +32,10 @@ export class CaptchaNotifier {
 
     // Native desktop notification (works on macOS, Windows, Linux)
     notifier.notify({
-      title:    "🔒 CAPTCHA Required — Job Agent Paused",
+      title:    "CAPTCHA Required — Job Agent Paused",
       message:  `${company} · ${role}\n\nSolve CAPTCHA in Chrome, then press Enter in terminal.`,
       sound:    true,
       wait:     false,    // non-blocking
-      // macOS: shows in Notification Center
-      // Windows: shows as toast
-      // Linux: uses libnotify
     });
 
     console.error(`\n[CAPTCHA] Application ${applicationId} is on hold.`);
@@ -65,7 +61,7 @@ export class CaptchaNotifier {
       this.states.set(applicationId, state);
     }
     notifier.notify({
-      title:   "⏱ Job Agent — CAPTCHA Timeout",
+      title:   "Job Agent — CAPTCHA Timeout",
       message: `Application ${applicationId} timed out. Moving to next job.`,
       sound:   false,
     });
@@ -90,7 +86,7 @@ export class CaptchaNotifier {
   // ── Notify user the agent has resumed after CAPTCHA ──────────────────────
   notifyResumed(company: string): void {
     notifier.notify({
-      title:   "✅ Job Agent — Resumed",
+      title:   "Job Agent — Resumed",
       message: `Continuing application to ${company}...`,
       sound:   false,
     });
