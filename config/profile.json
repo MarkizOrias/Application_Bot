@@ -1,0 +1,83 @@
+{
+  "personal": {
+    "full_name": "Georgi Bargan",
+    "email": "georgi.bargan@gmail.com",
+    "phone": "+41764157792",
+    "linkedin": "https://www.linkedin.com/in/georgi-bargan/",
+    "github": "https://github.com/MarkizOrias",
+    "portfolio": "https://portfolio-georgibargan.vercel.app/",
+    "location": "Basel, Switzerland (Remote)",
+    "timezone": "CET"
+  },
+  "work_authorization": {
+    "pl": "Citizen",
+    "eu": "Authorized",
+    "ch": "Authorized - permit C",
+    "us": "Authorized"
+  },
+  "preferences": {
+    "roles": [
+      "Operations Automation Engineer",
+      "Technical Business Analyst",
+      "Product Owner",
+      "FinTech Product Manager",
+      "Python Developer",
+      "Analytics Engineer",
+      "Solutions Engineer",
+      "Trade Support Engineer",
+      "Financial Data Analyst",
+      "Blockchain Developer"
+    ],
+    "min_salary_usd": 70000,
+    "exclude_companies": [
+      "UBS",
+      "Credit Suisse",
+      "State Street",
+      "Accenture",
+      "Capgemini",
+      "Infosys",
+      "Wipro",
+      "TCS"
+    ],
+    "require_remote": true,
+    "max_applications_per_session": 15,
+    "exclude_keywords": [
+      "10+ years software engineering",
+      "on-site required",
+      "US work authorization",
+      "Java required",
+      "C++ required",
+      "entry level",
+      "graduate"
+    ],
+    "preferred_keywords": [
+      "fintech",
+      "reconciliation",
+      "settlement",
+      "banking operations",
+      "automation",
+      "Python",
+      "Web3",
+      "DeFi",
+      "process improvement",
+      "Agile"
+    ]
+  },
+  "browser": {
+    "chrome_profile_path": "/Users/Georgi/AppData/Local/Google/Chrome/User Data/Default",
+    "headless": false,
+    "slow_mo_ms": 120
+  },
+  "job_sources": {
+    "linkedin": { "enabled": true, "easy_apply_only": true },
+    "greenhouse": { "enabled": true },
+    "lever": { "enabled": true },
+    "remotive": { "enabled": true },
+    "weworkremotely": { "enabled": true },
+    "himalayas": { "enabled": true }
+  },
+  "notifications": {
+    "platform": "auto",
+    "captcha_timeout_minutes": 10
+  }
+}
