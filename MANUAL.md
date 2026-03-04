@@ -179,15 +179,18 @@ _Linux:_
 Write this path down — you'll need it in Step 3.
 C:\Users\Georgi\AppData\Local\Google\Chrome\User Data\Default
 
-**1.4 Clone / create the project**
+**1.4 Set up the project**
+
+Clone the repository, install dependencies, and compile TypeScript:
 
 ```bash
-mkdir job-agent && cd job-agent
-npm init -y
-npm install @modelcontextprotocol/sdk playwright anthropic better-sqlite3 \
-            node-notifier pdf-lib docx axios cheerio
-npx playwright install chromium
+git clone https://github.com/MarkizOrias/Application_Bot.git
+cd Application_Bot
+npm install
+npm run build        # compiles src/ → dist/
 ```
+
+The compiled entry point will be at `dist/index.js` — that is the file you point Claude Desktop to in Step 4.
 
 ---
 
@@ -261,13 +264,15 @@ Create `config/profile.json`:
   },
   "preferences": {
     "roles": ["Senior Software Engineer", "Staff Engineer", "Backend Engineer"],
-    "min_salary_gbp": 80000,
+    "min_salary_usd": 80000,
     "exclude_companies": ["Amazon", "Accenture"],
     "require_remote": true,
-    "max_applications_per_session": 15
+    "max_applications_per_session": 15,
+    "exclude_keywords": ["10+ years software engineering", "on-site required", "Java required"],
+    "preferred_keywords": ["fintech", "automation", "Python", "Agile"]
   },
   "browser": {
-    "chrome_profile_path": "/Users/jane/Library/Application Support/Google/Chrome/Default",
+    "chrome_profile_path": "C:\\Users\\YourName\\AppData\\Local\\Google\\Chrome\\User Data\\Default",
     "headless": false,
     "slow_mo_ms": 120
   },
@@ -286,20 +291,35 @@ Create `config/profile.json`:
 }
 ```
 
+> **Windows path format:** Use double backslashes in the JSON string: `C:\\Users\\YourName\\...`
+> **macOS path format:** Use the forward-slash path as-is: `/Users/YourName/Library/Application Support/Google/Chrome/Default`
+
 ---
 
-### STEP 4 — Register the MCP Server with Claude Desktop (~5 min)
+### STEP 4 — Build and Register the MCP Server with Claude Desktop (~10 min)
+
+**4.1 Build the project first** (must do this before registering, and after every code change):
+
+```bash
+cd Application_Bot
+npm run build
+```
+
+This compiles `src/` into `dist/`. The server entry point is `dist/index.js`.
+
+**4.2 Register with Claude Desktop**
 
 Open Claude Desktop → Settings → Developer → Edit Config.
 
 Add to `claude_desktop_config.json`:
 
+_Windows:_
 ```json
 {
   "mcpServers": {
     "job-agent": {
       "command": "node",
-      "args": ["/absolute/path/to/job-agent/src/index.js"],
+      "args": ["C:\\Users\\Georgi\\Application_Bot\\dist\\index.js"],
       "env": {
         "ANTHROPIC_API_KEY": "sk-ant-..."
       }
@@ -308,7 +328,24 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-Restart Claude Desktop. You should see the 🔧 tool icon appear in the chat bar.
+_macOS / Linux:_
+```json
+{
+  "mcpServers": {
+    "job-agent": {
+      "command": "node",
+      "args": ["/Users/YourName/Application_Bot/dist/index.js"],
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-..."
+      }
+    }
+  }
+}
+```
+
+> The path must point to `dist/index.js` (the compiled output), **not** `src/index.js`.
+
+Restart Claude Desktop. You should see the tool icon appear in the chat bar — hover over it to confirm "job-agent" tools are listed.
 
 ---
 
@@ -355,7 +392,7 @@ Claude will:
 ```bash
 # See all applications logged today
 sqlite3 data/applications.db \
-  "SELECT company, role, status, applied_at FROM applications ORDER BY applied_at DESC LIMIT 20;"
+  "SELECT company, role, status, submitted_at FROM applications ORDER BY created_at DESC LIMIT 20;"
 ```
 
 Or ask Claude: _"Show me a summary of all applications from today's session."_
