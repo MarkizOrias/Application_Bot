@@ -2,7 +2,6 @@
   "name": "job-application-agent",
   "version": "1.0.0",
   "description": "MCP server that automates remote job applications with Claude",
-  "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
