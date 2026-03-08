@@ -19,8 +19,6 @@ Usage:
 
 import json
 import re
-import socket
-import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
@@ -266,63 +264,16 @@ def main() -> None:
     easy_apply = li_cfg.get("easy_apply_only", True)
 
     cdp_url = "http://localhost:9222"
-    chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-    # Real profile user data dir (parent of Default)
-    real_profile_dir = r"C:\Users\Georgi\AppData\Local\Google\Chrome\User Data"
 
     print("=" * 60)
     print("LinkedIn Job Scraper")
     print("=" * 60)
+    print(f"Connecting to  : {cdp_url}")
     print(f"Easy Apply only: {easy_apply}")
     print(f"Roles to search: {len(prefs['roles'])}")
     print(f"Output         : {output_path}")
     print("=" * 60)
     print()
-
-    # Kill any existing Chrome processes so the profile lock is released
-    print("Closing any existing Chrome processes...")
-    subprocess.run(["taskkill", "/f", "/im", "chrome.exe"], capture_output=True)
-
-    # Wait until no chrome.exe is running (up to 10s)
-    for _ in range(20):
-        result = subprocess.run(
-            ["tasklist", "/fi", "imagename eq chrome.exe"],
-            capture_output=True, text=True
-        )
-        if "chrome.exe" not in result.stdout:
-            break
-        time.sleep(0.5)
-    else:
-        print("[warn] Chrome processes may still be running — continuing anyway")
-
-    time.sleep(1)
-
-    # Launch Chrome with your real profile and remote debugging
-    print("Launching Chrome with your profile...")
-    subprocess.Popen([
-        chrome_exe,
-        "--remote-debugging-port=9222",
-        f"--user-data-dir={real_profile_dir}",
-        "--start-maximized",
-    ])
-
-    # Poll until port 9222 is actually accepting connections (up to 20s)
-    print("Waiting for Chrome debug port to open", end="", flush=True)
-    for _ in range(40):
-        try:
-            with socket.create_connection(("127.0.0.1", 9222), timeout=0.5):
-                break
-        except OSError:
-            print(".", end="", flush=True)
-            time.sleep(0.5)
-    else:
-        print("\n[!] Port 9222 never opened. Chrome may have ignored the flag.")
-        print("    Try running manually in cmd:")
-        print(f'    taskkill /f /im chrome.exe')
-        print(f'    "{chrome_exe}" --remote-debugging-port=9222 --user-data-dir="{real_profile_dir}"')
-        print("    Then check http://localhost:9222/json in your browser.")
-        return
-    print(" ready!")
 
     all_jobs: list[dict] = []
     seen_urls: set[str] = set()
@@ -331,28 +282,32 @@ def main() -> None:
         try:
             browser = pw.chromium.connect_over_cdp(cdp_url)
         except Exception as exc:
-            print(f"[!] Could not connect to Chrome: {exc}")
+            print(
+                f"[!] Could not connect to Chrome on port 9222: {exc}\n\n"
+                "    Ensure Chrome is running with the debug flag. Close ALL Chrome\n"
+                "    windows first, then run in cmd:\n\n"
+                '    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"'
+                " --remote-debugging-port=9222\n\n"
+                "    Or to run alongside your normal Chrome (requires login):\n\n"
+                '    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"'
+                " --remote-debugging-port=9222 --user-data-dir=C:\\Temp\\chrome-debug\n\n"
+                "    Verify the port is open: http://localhost:9222/json\n"
+            )
             return
 
         # Reuse the existing context (your logged-in session)
         context = browser.contexts[0] if browser.contexts else browser.new_context()
         page = context.new_page()
 
-        # Navigate to LinkedIn and wait until the user is past any verification
+        # Warm-up: make sure we're logged in
         print("Opening LinkedIn...")
         page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded", timeout=30000)
         time.sleep(2)
 
-        blocked_patterns = ("login", "authwall", "checkpoint", "challenge", "verify")
-        while any(p in page.url for p in blocked_patterns):
-            print("\n[!] LinkedIn requires login or verification.")
-            print("    Complete it in the browser window, then press Enter to continue.")
-            input("    Press Enter when you are on the LinkedIn feed > ")
-            # Re-check after user confirms
-            page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded", timeout=30000)
-            time.sleep(2)
-
-        print("Logged in. Starting job search...\n")
+        if "login" in page.url or "authwall" in page.url:
+            print("\n[!] LinkedIn is asking for login.")
+            print("    Please log in manually in the browser, then press Enter here to continue.")
+            input("    Press Enter once logged in > ")
 
         # --- Search each role ---
         for role in prefs["roles"]:
