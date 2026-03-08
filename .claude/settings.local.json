@@ -1,7 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:developer.chrome.com)"
+      "WebFetch(domain:developer.chrome.com)",
+      "Bash(pip show reportlab python-dotenv anthropic)",
+      "Bash(pip install anthropic reportlab)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''cv_generator.py''\\).read\\(\\)\\); print\\(''cv_generator.py OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''linkedin_scraper.py''\\).read\\(\\)\\); print\\(''linkedin_scraper.py OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''cv_generator.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(python -c \":*)",
+      "Bash(pip show playwright pandas openpyxl anthropic reportlab python-dotenv pillow)",
+      "Bash(pip freeze)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''setup_profile.py''\\).read\\(\\)\\); print\\(''setup_profile.py OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''setup_profile.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''setup_profile.py OK''\\)\")"
     ]
   }
 }

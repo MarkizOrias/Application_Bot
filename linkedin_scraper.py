@@ -17,6 +17,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from cv_generator import generate_cvs_for_jobs
+
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -40,6 +42,7 @@ CDP_URL = f"http://localhost:{CDP_PORT}"
 # Chrome lifecycle
 # ---------------------------------------------------------------------------
 
+
 def launch_chrome() -> None:
     """Kill all Chrome processes, then start a fresh instance with CDP enabled."""
     print("Killing existing Chrome processes...")
@@ -47,12 +50,14 @@ def launch_chrome() -> None:
     time.sleep(1.5)
 
     print("Launching Chrome with remote debugging...")
-    subprocess.Popen([
-        CHROME_EXE,
-        f"--remote-debugging-port={CDP_PORT}",
-        f"--user-data-dir={CHROME_USER_DATA}",
-        "--start-maximized",
-    ])
+    subprocess.Popen(
+        [
+            CHROME_EXE,
+            f"--remote-debugging-port={CDP_PORT}",
+            f"--user-data-dir={CHROME_USER_DATA}",
+            "--start-maximized",
+        ]
+    )
     # Give Chrome time to start and open the debug port
     time.sleep(3)
 
@@ -60,6 +65,7 @@ def launch_chrome() -> None:
 # ---------------------------------------------------------------------------
 # Config helpers
 # ---------------------------------------------------------------------------
+
 
 def load_profile() -> dict:
     with open(CONFIG_PATH, encoding="utf-8") as f:
@@ -70,13 +76,15 @@ def load_profile() -> dict:
 # URL building
 # ---------------------------------------------------------------------------
 
+
 def build_search_url(role: str, easy_apply: bool) -> str:
     """Build a LinkedIn jobs search URL for a given role."""
     from urllib.parse import urlencode
+
     params = {
         "keywords": role,
-        "f_WT": "2",        # Remote only
-        "sortBy": "DD",     # Most recent first
+        "f_WT": "2",  # Remote only
+        "sortBy": "DD",  # Most recent first
     }
     if easy_apply:
         params["f_AL"] = "true"
@@ -86,6 +94,7 @@ def build_search_url(role: str, easy_apply: bool) -> str:
 # ---------------------------------------------------------------------------
 # Scraping helpers
 # ---------------------------------------------------------------------------
+
 
 def scroll_jobs_panel(page, rounds: int = 5) -> None:
     """Scroll the jobs list panel (which has its own scroll container)."""
@@ -110,7 +119,9 @@ def extract_card(card) -> dict | None:
     job_id = (
         card.get_attribute("data-occludable-job-id")
         or card.get_attribute("data-job-id")
-        or card.get_attribute("data-entity-urn", )
+        or card.get_attribute(
+            "data-entity-urn",
+        )
     )
 
     # Title link — try stable selectors first, then fall back to any /jobs/view/ href
@@ -206,6 +217,7 @@ def scrape_cards(page, max_per_search: int = 25) -> list[dict]:
 # Filtering
 # ---------------------------------------------------------------------------
 
+
 def is_excluded(job: dict, profile: dict) -> tuple[bool, str]:
     """Return (True, reason) if the job should be skipped, else (False, '')."""
     prefs = profile["preferences"]
@@ -228,13 +240,22 @@ def is_excluded(job: dict, profile: dict) -> tuple[bool, str]:
 # Excel output
 # ---------------------------------------------------------------------------
 
+
 def save_excel(jobs: list[dict], path: Path) -> None:
     """Write jobs list to a formatted Excel file."""
     df = pd.DataFrame(jobs)
 
     # Column order
-    col_order = ["title", "company", "location", "search_role", "easy_apply",
-                 "url", "applied", "scraped_at"]
+    col_order = [
+        "title",
+        "company",
+        "location",
+        "search_role",
+        "easy_apply",
+        "url",
+        "applied",
+        "scraped_at",
+    ]
     df = df[[c for c in col_order if c in df.columns]]
 
     df.to_excel(path, index=False, sheet_name="Listings")
@@ -267,7 +288,9 @@ def save_excel(jobs: list[dict], path: Path) -> None:
             cell.font = body_font
             if url_col_idx and cell.column == url_col_idx and cell.value:
                 cell.hyperlink = cell.value
-                cell.font = Font(name="Calibri", size=10, color="0563C1", underline="single")
+                cell.font = Font(
+                    name="Calibri", size=10, color="0563C1", underline="single"
+                )
                 cell.value = "Open"
 
     # Auto-size columns
@@ -289,6 +312,7 @@ def save_excel(jobs: list[dict], path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     profile = load_profile()
@@ -328,16 +352,27 @@ def main() -> None:
 
         # Warm-up: make sure we're logged in
         print("Opening LinkedIn...")
-        page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded", timeout=30000)
+        page.goto(
+            "https://www.linkedin.com/feed/",
+            wait_until="domcontentloaded",
+            timeout=30000,
+        )
         time.sleep(2)
 
         if "login" in page.url or "authwall" in page.url:
             print("\n[!] LinkedIn is asking for login.")
-            print("    Please log in manually in the browser, then press Enter here to continue.")
+            print(
+                "    Please log in manually in the browser, then press Enter here to continue."
+            )
             input("    Press Enter once logged in > ")
 
-        # --- Search each role ---
+        JOBS_LIMIT = 1
+
+        # --- Search each role until we have enough jobs ---
         for role in prefs["roles"]:
+            if len(all_jobs) >= JOBS_LIMIT:
+                break
+
             url = build_search_url(role, easy_apply)
             print(f"\nSearching: {role}")
             print(f"  URL: {url}")
@@ -350,22 +385,31 @@ def main() -> None:
                 new_count = 0
 
                 for job in cards:
+                    if len(all_jobs) >= JOBS_LIMIT:
+                        break
+
                     # De-duplicate by URL
                     if job["url"] in seen_urls:
                         continue
 
                     excluded, reason = is_excluded(job, profile)
                     if excluded:
-                        print(f"  [-] Skip  : {job['title']} @ {job['company']} ({reason})")
+                        print(
+                            f"  [-] Skip  : {job['title']} @ {job['company']} ({reason})"
+                        )
                         continue
 
                     job["search_role"] = role
                     seen_urls.add(job["url"])
                     all_jobs.append(job)
                     new_count += 1
-                    print(f"  [+] Added : {job['title']} @ {job['company']} | {job['location']}")
+                    print(
+                        f"  [+] Added : {job['title']} @ {job['company']} | {job['location']}"
+                    )
 
-                print(f"  --> {new_count} new jobs added (total so far: {len(all_jobs)})")
+                print(
+                    f"  --> {new_count} new jobs added (total so far: {len(all_jobs)})"
+                )
 
             except PlaywrightTimeout:
                 print(f"  [!] Timeout navigating to search for '{role}' - skipping")
@@ -373,6 +417,10 @@ def main() -> None:
                 print(f"  [!] Error on '{role}': {exc}")
 
             time.sleep(1.5)  # Polite delay between searches
+
+        # --- Generate tailored CVs for all collected jobs ---
+        if all_jobs:
+            generate_cvs_for_jobs(all_jobs, profile, page, limit=JOBS_LIMIT)
 
         context.close()
 

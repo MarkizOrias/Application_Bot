@@ -1,4 +1,7 @@
-playwright
-pandas
+anthropic
 openpyxl
+pandas
+Pillow
+playwright
 python-dotenv
+reportlab
