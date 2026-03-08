@@ -87,34 +87,49 @@ def build_search_url(role: str, easy_apply: bool) -> str:
 # Scraping helpers
 # ---------------------------------------------------------------------------
 
-def scroll_to_load(page, rounds: int = 4) -> None:
-    """Scroll the results panel to trigger lazy-loading of job cards."""
+def scroll_jobs_panel(page, rounds: int = 5) -> None:
+    """Scroll the jobs list panel (which has its own scroll container)."""
+    # The jobs list is a scrollable div — scrolling the page body doesn't work
+    panel = (
+        page.query_selector(".jobs-search-results-list")
+        or page.query_selector(".scaffold-layout__list-container")
+        or page.query_selector("[class*='jobs-search-results-list']")
+    )
     for _ in range(rounds):
-        page.keyboard.press("End")
-        time.sleep(1.2)
+        if panel:
+            panel.evaluate("el => el.scrollBy(0, 800)")
+        else:
+            page.evaluate("window.scrollBy(0, 800)")
+        time.sleep(1.0)
 
 
 def extract_card(card) -> dict | None:
     """Extract fields from a single job-card element. Returns None on failure."""
 
-    # Title & URL  (multiple selector fallbacks)
+    # Job ID is the most reliable field — present as a data attribute on the <li>
+    job_id = (
+        card.get_attribute("data-occludable-job-id")
+        or card.get_attribute("data-job-id")
+        or card.get_attribute("data-entity-urn", )
+    )
+
+    # Title link — try stable selectors first, then fall back to any /jobs/view/ href
     title_el = (
         card.query_selector("a.job-card-list__title--link")
+        or card.query_selector("a[href*='/jobs/view/']")
         or card.query_selector("a.job-card-container__link")
-        or card.query_selector("a[data-control-name='jobcard_title']")
-        or card.query_selector("strong.job-card-search__title")
     )
 
     company_el = (
         card.query_selector(".job-card-container__company-name")
         or card.query_selector(".artdeco-entity-lockup__subtitle span")
-        or card.query_selector("[data-tracking-control-name*='company']")
+        or card.query_selector(".job-card-container__primary-description")
     )
 
     location_el = (
-        card.query_selector(".job-card-container__metadata-item")
+        card.query_selector("li.job-card-container__metadata-item")
+        or card.query_selector(".job-card-container__metadata-item")
         or card.query_selector(".artdeco-entity-lockup__caption li")
-        or card.query_selector(".job-card-container__metadata-wrapper li")
     )
 
     title = title_el.inner_text().strip() if title_el else None
@@ -124,17 +139,19 @@ def extract_card(card) -> dict | None:
     company = company_el.inner_text().strip() if company_el else ""
     location = location_el.inner_text().strip() if location_el else ""
 
-    href = title_el.get_attribute("href") if title_el else ""
-    if href and not href.startswith("http"):
-        href = "https://www.linkedin.com" + href
+    # Build clean job URL
+    if job_id:
+        # Strip urn prefix if present  e.g. "urn:li:job:123" -> "123"
+        job_id = re.sub(r".*:", "", str(job_id))
+        clean_url = f"https://www.linkedin.com/jobs/view/{job_id}/"
+    else:
+        href = title_el.get_attribute("href") if title_el else ""
+        if href and not href.startswith("http"):
+            href = "https://www.linkedin.com" + href
+        m = re.search(r"/jobs/view/(\d+)", href or "")
+        clean_url = f"https://www.linkedin.com/jobs/view/{m.group(1)}/" if m else href
 
-    # Normalise URL to a clean /jobs/view/<id>/ form
-    match = re.search(r"/jobs/view/(\d+)", href or "")
-    clean_url = f"https://www.linkedin.com/jobs/view/{match.group(1)}/" if match else href
-
-    # Easy Apply badge present?
-    easy_apply_badge = card.query_selector(".job-card-container__apply-method")
-    easy_apply = bool(easy_apply_badge)
+    easy_apply = bool(card.query_selector(".job-card-container__apply-method"))
 
     return {
         "title": title,
@@ -148,28 +165,28 @@ def extract_card(card) -> dict | None:
 
 
 def scrape_cards(page, max_per_search: int = 25) -> list[dict]:
-    """Wait for cards, scroll to load more, then extract all visible cards."""
+    """Wait for cards, scroll the jobs panel to load more, then extract all visible cards."""
     jobs = []
 
-    # Wait for the results list
+    # Current LinkedIn uses data-occludable-job-id on each <li>
+    card_selector = (
+        "li[data-occludable-job-id], "
+        "li[data-job-id], "
+        "li.jobs-search-results__list-item"
+    )
+
     try:
-        page.wait_for_selector(
-            "ul.scaffold-layout__list-container li, "
-            ".jobs-search__results-list li, "
-            "[data-job-id]",
-            timeout=18000,
-        )
+        page.wait_for_selector(card_selector, timeout=18000)
     except PlaywrightTimeout:
-        print("    [warn] Results list timed out - page may need login or CAPTCHA")
+        print("    [warn] No job cards found - check login or CAPTCHA")
         return jobs
 
-    scroll_to_load(page)
+    scroll_jobs_panel(page)
 
-    # Try each known container selector
     cards = (
-        page.query_selector_all("li.jobs-search-results__list-item")
-        or page.query_selector_all("ul.scaffold-layout__list-container > li")
-        or page.query_selector_all(".jobs-search__results-list > li")
+        page.query_selector_all("li[data-occludable-job-id]")
+        or page.query_selector_all("li[data-job-id]")
+        or page.query_selector_all("li.jobs-search-results__list-item")
     )
 
     print(f"    Found {len(cards)} cards on page")
