@@ -1,24 +1,18 @@
 #!/usr/bin/env python3
 """
 LinkedIn Job Scraper - Phase 1 of Application Bot
-Attaches to a running Chrome instance via CDP, searches each role from
-config/profile.json, and saves listings to Excel.
+Automatically kills any running Chrome, launches a fresh instance with remote
+debugging on port 9222, attaches via CDP, and saves job listings to Excel.
 
 Usage:
-    1. Launch Chrome with remote debugging enabled (run once, keep open):
+    python linkedin_scraper.py
 
-       "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222
-
-    2. Log in to LinkedIn in that Chrome window.
-
-    3. Run this script:
-       python linkedin_scraper.py
-
-    Chrome stays open and fully functional during the run.
+The script handles Chrome startup automatically. Log in to LinkedIn if prompted.
 """
 
 import json
 import re
+import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +28,33 @@ OUTPUT_DIR = Path("output")
 
 # LinkedIn brand blue for header styling
 LI_BLUE = "0A66C2"
+
+
+CHROME_EXE = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+CHROME_USER_DATA = r"C:\Temp\chrome-debug"
+CDP_PORT = 9222
+CDP_URL = f"http://localhost:{CDP_PORT}"
+
+
+# ---------------------------------------------------------------------------
+# Chrome lifecycle
+# ---------------------------------------------------------------------------
+
+def launch_chrome() -> None:
+    """Kill all Chrome processes, then start a fresh instance with CDP enabled."""
+    print("Killing existing Chrome processes...")
+    subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], capture_output=True)
+    time.sleep(1.5)
+
+    print("Launching Chrome with remote debugging...")
+    subprocess.Popen([
+        CHROME_EXE,
+        f"--remote-debugging-port={CDP_PORT}",
+        f"--user-data-dir={CHROME_USER_DATA}",
+        "--start-maximized",
+    ])
+    # Give Chrome time to start and open the debug port
+    time.sleep(3)
 
 
 # ---------------------------------------------------------------------------
@@ -263,36 +284,25 @@ def main() -> None:
 
     easy_apply = li_cfg.get("easy_apply_only", True)
 
-    cdp_url = "http://localhost:9222"
-
     print("=" * 60)
     print("LinkedIn Job Scraper")
     print("=" * 60)
-    print(f"Connecting to  : {cdp_url}")
     print(f"Easy Apply only: {easy_apply}")
     print(f"Roles to search: {len(prefs['roles'])}")
     print(f"Output         : {output_path}")
     print("=" * 60)
     print()
 
+    launch_chrome()
+
     all_jobs: list[dict] = []
     seen_urls: set[str] = set()
 
     with sync_playwright() as pw:
         try:
-            browser = pw.chromium.connect_over_cdp(cdp_url)
+            browser = pw.chromium.connect_over_cdp(CDP_URL)
         except Exception as exc:
-            print(
-                f"[!] Could not connect to Chrome on port 9222: {exc}\n\n"
-                "    Ensure Chrome is running with the debug flag. Close ALL Chrome\n"
-                "    windows first, then run in cmd:\n\n"
-                '    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"'
-                " --remote-debugging-port=9222\n\n"
-                "    Or to run alongside your normal Chrome (requires login):\n\n"
-                '    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"'
-                " --remote-debugging-port=9222 --user-data-dir=C:\\Temp\\chrome-debug\n\n"
-                "    Verify the port is open: http://localhost:9222/json\n"
-            )
+            print(f"[!] Could not connect to Chrome: {exc}")
             return
 
         # Reuse the existing context (your logged-in session)
