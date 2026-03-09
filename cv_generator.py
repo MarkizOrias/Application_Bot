@@ -84,9 +84,9 @@ def fetch_job_description(page, url: str) -> str:
                 ...[...document.querySelectorAll('button')].filter(b =>
                     /^\\s*(see\\s+)?more\\s*$/i.test(b.innerText)
                 ),
-                // footer "Show more" link inside description section
+                // footer "Show more" link scoped to the description section only
                 ...document.querySelectorAll(
-                    '.jobs-description__footer-button, button[aria-expanded="false"]'
+                    '.jobs-description__footer-button, #job-details button[aria-expanded="false"], .jobs-description button[aria-expanded="false"]'
                 ),
             ];
             for (const btn of candidates) {
@@ -189,7 +189,7 @@ URL     : {job.get('url', '')}
 
 === INSTRUCTIONS ===
 - Write a 2-3 sentence professional summary that directly addresses THIS role.
-- Select and reorder skills to place the most relevant ones first.
+- Select exactly 9 of the most relevant skills (no more, no fewer) and list them first.
 - Keep every skill label SHORT — maximum 4 words, ideally 2-3. \
   Use concise forms: "Analytical Problem-Solving" not "Troubleshooting & Analytical Problem-Solving", \
   "Workflow Design" not "Conversational Flow & Workflow Design".
@@ -456,7 +456,7 @@ def render_cv_pdf(cv: dict, profile: dict, job: dict, output_path: Path) -> None
     # ----------------------------------------------------------------- Skills
     if cv.get("skills"):
         story += _section("Core Skills", styles)
-        skill_list = cv["skills"]
+        skill_list = cv["skills"][:9]   # 3 cols × 3 rows max
         cols = 3
         col_w = USABLE_W / cols
         rows = [skill_list[i : i + cols] for i in range(0, len(skill_list), cols)]
