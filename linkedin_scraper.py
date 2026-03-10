@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 from cv_generator import generate_cvs_for_jobs
+from apply_bot import run_apply_session
 
 import pandas as pd
 from openpyxl import load_workbook
@@ -418,13 +419,14 @@ def main() -> None:
 
             time.sleep(1.5)  # Polite delay between searches
 
-        # --- Generate tailored CVs for all collected jobs ---
+        # --- Generate tailored CVs then attempt Easy Apply ---
         if all_jobs:
-            generate_cvs_for_jobs(all_jobs, profile, page, limit=JOBS_LIMIT)
+            cv_map = generate_cvs_for_jobs(all_jobs, profile, page, limit=JOBS_LIMIT)
+            run_apply_session(page, all_jobs[:JOBS_LIMIT], profile, cv_map)
 
         context.close()
 
-    # --- Save results ---
+    # --- Save raw listings snapshot (timestamped, read-only reference) ---
     if all_jobs:
         save_excel(all_jobs, output_path)
     else:

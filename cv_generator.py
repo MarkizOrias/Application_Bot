@@ -227,13 +227,28 @@ Return this exact JSON structure:
     )
 
     raw = response.content[0].text.strip()
+    if not raw:
+        raise ValueError("Claude returned an empty response")
 
     # Strip any accidental code fences
     if "```" in raw:
         raw = re.sub(r"```(?:json)?", "", raw).strip()
         raw = raw.rstrip("`").strip()
 
-    return json.loads(raw)
+    if not raw:
+        raise ValueError("Response was empty after stripping markdown fences")
+
+    # If Claude wrote a narrative explanation instead of JSON it means the job
+    # is a mismatch — raise a distinct error so the caller can skip cleanly.
+    if not raw.lstrip().startswith("{"):
+        first_line = raw.splitlines()[0][:120]
+        raise ValueError(f"JOB_MISMATCH: {first_line}")
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        print(f"    [cv] Raw Claude response (first 300 chars): {raw[:300]}")
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -531,10 +546,12 @@ def render_cv_pdf(cv: dict, profile: dict, job: dict, output_path: Path) -> None
 # Orchestrator
 # ---------------------------------------------------------------------------
 
-def generate_cvs_for_jobs(jobs: list[dict], profile: dict, page, limit: int = 3) -> None:
-    """For each of the first `limit` jobs, scrape description, generate and save a tailored CV PDF."""
+def generate_cvs_for_jobs(jobs: list[dict], profile: dict, page, limit: int = 3) -> dict:
+    """For each of the first `limit` jobs, scrape description, generate and save a tailored CV PDF.
+    Returns a dict mapping job URL -> PDF Path for successfully generated CVs."""
     CVS_DIR.mkdir(parents=True, exist_ok=True)
     target_jobs = jobs[:limit]
+    results: dict = {}
 
     print(f"\n{'=' * 60}")
     print(f"CV Generator — processing {len(target_jobs)} job(s)")
@@ -559,6 +576,12 @@ def generate_cvs_for_jobs(jobs: list[dict], profile: dict, page, limit: int = 3)
         print("    Calling Claude to tailor CV...")
         try:
             tailored_cv = generate_tailored_cv(profile, job, description)
+        except ValueError as exc:
+            if str(exc).startswith("JOB_MISMATCH"):
+                print(f"    [skip] Not a match — {str(exc)[13:]}")
+            else:
+                print(f"    [error] Claude generation failed: {exc}")
+            continue
         except Exception as exc:
             print(f"    [error] Claude generation failed: {exc}")
             continue
@@ -566,10 +589,12 @@ def generate_cvs_for_jobs(jobs: list[dict], profile: dict, page, limit: int = 3)
         print("    Rendering PDF...")
         try:
             render_cv_pdf(tailored_cv, profile, job, output_path)
+            results[job["url"]] = output_path
         except Exception as exc:
             print(f"    [error] PDF render failed: {exc}")
             continue
 
         time.sleep(1.5)  # polite pause between API calls
 
-    print(f"\n[cv] Done. {len(target_jobs)} CV(s) saved to {CVS_DIR.resolve()}")
+    print(f"\n[cv] Done. {len(results)}/{len(target_jobs)} CV(s) saved to {CVS_DIR.resolve()}")
+    return results
