@@ -53,11 +53,24 @@ CDP_URL = f"http://localhost:{CDP_PORT}"
 # ---------------------------------------------------------------------------
 
 
+def _wait_for_cdp(timeout: float = 15.0) -> bool:
+    """Poll the CDP endpoint until Chrome exposes it. Returns True when ready."""
+    import urllib.request
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(f"{CDP_URL}/json", timeout=1)
+            return True
+        except Exception:
+            time.sleep(0.4)
+    return False
+
+
 def launch_chrome() -> None:
     """Kill all Chrome processes, then start a fresh instance with CDP enabled."""
     print("Killing existing Chrome processes...")
     subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], capture_output=True)
-    time.sleep(1.5)
+    time.sleep(0.5)  # brief wait for process cleanup
 
     print("Launching Chrome with remote debugging...")
     subprocess.Popen(
@@ -68,8 +81,11 @@ def launch_chrome() -> None:
             "--start-maximized",
         ]
     )
-    # Give Chrome time to start and open the debug port
-    time.sleep(3)
+
+    if _wait_for_cdp():
+        print("    Chrome ready.")
+    else:
+        print("[!] Chrome did not expose CDP within 15s — proceeding anyway")
 
 
 # ---------------------------------------------------------------------------
@@ -106,20 +122,24 @@ def build_search_url(role: str, easy_apply: bool) -> str:
 # ---------------------------------------------------------------------------
 
 
-def scroll_jobs_panel(page, rounds: int = 5) -> None:
-    """Scroll the jobs list panel (which has its own scroll container)."""
-    # The jobs list is a scrollable div — scrolling the page body doesn't work
+def scroll_jobs_panel(page, max_rounds: int = 8) -> None:
+    """Scroll the jobs list panel until card count stabilises or max_rounds reached."""
     panel = (
         page.query_selector(".jobs-search-results-list")
         or page.query_selector(".scaffold-layout__list-container")
         or page.query_selector("[class*='jobs-search-results-list']")
     )
-    for _ in range(rounds):
+    prev_count = 0
+    for _ in range(max_rounds):
         if panel:
             panel.evaluate("el => el.scrollBy(0, 800)")
         else:
             page.evaluate("window.scrollBy(0, 800)")
-        time.sleep(1.0)
+        time.sleep(0.6)
+        cards = page.query_selector_all("li[data-occludable-job-id]")
+        if len(cards) == prev_count and prev_count > 0:
+            break  # no new cards loaded — stop early
+        prev_count = len(cards)
 
 
 def extract_card(card) -> dict | None:
@@ -200,7 +220,7 @@ def _enrich_from_panel(page, card, job: dict) -> None:
         except Exception:
             return
 
-        time.sleep(0.8)
+        time.sleep(0.4)
 
         # Read job description from the panel
         desc_el = page.query_selector("#job-details")

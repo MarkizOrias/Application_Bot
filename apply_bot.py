@@ -35,6 +35,20 @@ TRACKER_COLS = [
     "applied", "applied_at", "cv_path",
 ]
 
+# ---------------------------------------------------------------------------
+# Anthropic client — created once per process, reused across all form-fill calls
+# ---------------------------------------------------------------------------
+
+_anthropic_client: anthropic.Anthropic | None = None
+
+
+def _get_client() -> anthropic.Anthropic:
+    global _anthropic_client
+    if _anthropic_client is None:
+        api_key = os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+        _anthropic_client = anthropic.Anthropic(api_key=api_key)
+    return _anthropic_client
+
 
 # ===========================================================================
 # Tracker management
@@ -384,10 +398,8 @@ def _claude_fill_form(page: Page, profile: dict) -> None:
         "- Return ONLY valid JSON, no markdown fences, no extra text"
     )
 
-    api_key = os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
-    client = anthropic.Anthropic(api_key=api_key)
     try:
-        resp = client.messages.create(
+        resp = _get_client().messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
@@ -524,21 +536,25 @@ def _advance(page: Page) -> str:
             btn.click()
             return key
 
-    # Fallback: scan button text
-    for text, key in [("Submit application", "submit"), ("Review", "review"), ("Next", "next"), ("Continue", "next")]:
-        for btn in page.query_selector_all("button"):
-            try:
-                if not (btn.is_visible() and btn.is_enabled()):
-                    continue
-                span = btn.query_selector("span")
-                btn_text = (span.inner_text() if span else btn.inner_text()).strip()
-                if btn_text == text:
-                    btn.click()
-                    return key
-            except Exception:
-                pass
-
-    return "stuck"
+    # Fallback: single JS pass over all buttons — avoids repeated Python↔DOM round-trips
+    result = page.evaluate("""() => {
+        const targets = [
+            ["Submit application", "submit"],
+            ["Review", "review"],
+            ["Next", "next"],
+            ["Continue", "next"],
+        ];
+        for (const [text, key] of targets) {
+            for (const btn of document.querySelectorAll("button")) {
+                if (!btn.offsetParent || btn.disabled) continue;
+                const span = btn.querySelector("span");
+                const t = (span ? span.innerText : btn.innerText).trim();
+                if (t === text) { btn.click(); return key; }
+            }
+        }
+        return "stuck";
+    }""")
+    return result or "stuck"
 
 
 def _close_modal(page: Page) -> None:
@@ -591,7 +607,7 @@ def _run_modal(page: Page, profile: dict, cv_path: Path | None) -> bool:
     repeat_count: int = 0
 
     for step in range(MAX_STEPS):
-        time.sleep(1.0)
+        time.sleep(0.6)
 
         if not page.query_selector(MODAL_SEL):
             print("      [apply] Modal closed unexpectedly")
@@ -740,50 +756,3 @@ def attempt_easy_apply(page: Page, job: dict, profile: dict, cv_path: Path | Non
         return False
 
 
-def run_apply_session(
-    page: Page,
-    jobs: list[dict],
-    profile: dict,
-    cv_map: dict,
-) -> None:
-    """
-    For each job in `jobs` (up to max_applications_per_session):
-      - skip if already applied (per tracker)
-      - attempt Easy Apply with the matching tailored CV
-      - update and save the tracker
-    """
-    df = load_tracker()
-    # Only track jobs that passed the CV relevance check (have a generated CV)
-    relevant_jobs = [j for j in jobs if j.get("url") in cv_map]
-    df = upsert_jobs(df, relevant_jobs)
-
-    max_apps = profile["preferences"].get("max_applications_per_session", 15)
-    applied_count = 0
-
-    for job in jobs:
-        if applied_count >= max_apps:
-            print(f"\n[apply] Session limit reached ({max_apps} applications).")
-            break
-
-        url = job.get("url", "")
-
-        if already_applied(df, url):
-            print(f"  [apply] Skip (already applied): {job.get('title')} @ {job.get('company')}")
-            continue
-
-        if not job.get("easy_apply"):
-            print(f"  [apply] External apply — see URL in tracker: {job.get('title')} @ {job.get('company')}")
-            continue
-
-        cv_path = cv_map.get(url)
-        success = attempt_easy_apply(page, job, profile, cv_path)
-
-        if success:
-            df = mark_applied(df, url, cv_path)
-            applied_count += 1
-            print(f"    [apply] ✓ Applied ({applied_count}/{max_apps})")
-
-        time.sleep(3)  # polite delay between applications
-
-    save_tracker(df)
-    print(f"\n[apply] Session complete — {applied_count} application(s) submitted.")

@@ -12,6 +12,7 @@ import json
 import os
 import re
 import time
+from functools import lru_cache
 from pathlib import Path
 
 import anthropic
@@ -35,6 +36,39 @@ from reportlab.platypus import (
 load_dotenv()
 
 CONFIG_PATH = Path("config/profile.json")
+
+# ---------------------------------------------------------------------------
+# Anthropic client — created once per process, reused across all CV calls
+# ---------------------------------------------------------------------------
+
+_anthropic_client: anthropic.Anthropic | None = None
+
+
+def _get_client() -> anthropic.Anthropic:
+    global _anthropic_client
+    if _anthropic_client is None:
+        api_key = os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+        _anthropic_client = anthropic.Anthropic(api_key=api_key)
+    return _anthropic_client
+
+
+def _api_call_with_retry(client: anthropic.Anthropic, **kwargs):
+    """Call client.messages.create with exponential backoff on transient errors."""
+    for attempt in range(4):
+        try:
+            return client.messages.create(**kwargs)
+        except anthropic.RateLimitError:
+            wait = 2 ** attempt
+            print(f"    [api] Rate limited — retrying in {wait}s...")
+            time.sleep(wait)
+        except anthropic.APIStatusError as exc:
+            if exc.status_code >= 500:
+                wait = 2 ** attempt
+                print(f"    [api] Server error {exc.status_code} — retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
+    raise RuntimeError("Claude API failed after 4 attempts")
 OUTPUT_DIR = Path("output")
 CVS_DIR = OUTPUT_DIR / "cvs"
 MEDIA_DIR = Path("media")
@@ -75,7 +109,7 @@ def fetch_job_description(page, url: str, prefetched: str | None = None) -> str:
         except Exception:
             pass
 
-        time.sleep(1.5)
+        time.sleep(0.5)
 
         # --- Expand the truncated description ---
         # LinkedIn renders an inline "... more" button as a <button> with text
@@ -159,8 +193,7 @@ def fetch_job_description(page, url: str, prefetched: str | None = None) -> str:
 
 def generate_tailored_cv(profile: dict, job: dict, description: str) -> dict:
     """Send profile + job description to Claude and return tailored CV as dict."""
-    api_key = os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
-    client = anthropic.Anthropic(api_key=api_key)
+    client = _get_client()
 
     cv_data = profile.get("cv", {})
     personal = profile["personal"]
@@ -230,7 +263,8 @@ Return this exact JSON structure:
   "languages": ["..."]
 }}"""
 
-    response = client.messages.create(
+    response = _api_call_with_retry(
+        client,
         model="claude-opus-4-6",
         max_tokens=3000,
         messages=[{"role": "user", "content": prompt}],
@@ -374,8 +408,9 @@ def _scaled_image(path: Path, height_cm: float, hAlign: str = "LEFT") -> RLImage
     return img_obj
 
 
+@lru_cache(maxsize=None)
 def _find_logo(company: str) -> Path | None:
-    """Fuzzy-match a company name to a logo file in media/."""
+    """Fuzzy-match a company name to a logo file in media/. Result cached per company."""
     if not MEDIA_DIR.exists():
         return None
     company_lower = company.lower()
@@ -636,8 +671,6 @@ def generate_cvs_for_jobs(
         except Exception as exc:
             print(f"    [error] PDF render failed: {exc}")
             continue
-
-        time.sleep(1.5)  # polite pause between API calls
 
     print(
         f"\n[cv] Done. {len(results)}/{len(target_jobs)} CV(s) saved to {CVS_DIR.resolve()}"
