@@ -59,8 +59,11 @@ def load_profile() -> dict:
 # Job description scraper
 # ---------------------------------------------------------------------------
 
-def fetch_job_description(page, url: str) -> str:
-    """Navigate to a LinkedIn job page and return the full 'About the job' text."""
+def fetch_job_description(page, url: str, prefetched: str | None = None) -> str:
+    """Return the 'About the job' text. Uses prefetched if available, otherwise navigates."""
+    if prefetched and len(prefetched) > 100:
+        return prefetched
+
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=25000)
 
@@ -558,16 +561,15 @@ def generate_cvs_for_jobs(jobs: list[dict], profile: dict, page, limit: int = 3)
     print(f"Output dir: {CVS_DIR.resolve()}")
     print("=" * 60)
 
-    for i, job in enumerate(target_jobs, start=1):
-        company_slug = re.sub(r"[^\w]", "_", job.get("company", "unknown"))[:30]
-        title_slug = re.sub(r"[^\w]", "_", job.get("title", "job"))[:30]
-        filename = f"cv_{i:02d}_{company_slug}_{title_slug}.pdf"
+    next_idx = len(list(CVS_DIR.glob("cv_*.pdf"))) + 1
+    for i, job in enumerate(target_jobs, start=next_idx):
+        filename = f"cv_{i:02d}.pdf"
         output_path = CVS_DIR / filename
 
         print(f"\n[{i}/{len(target_jobs)}] {job['title']} @ {job['company']}")
 
         print("    Fetching job description...")
-        description = fetch_job_description(page, job["url"])
+        description = fetch_job_description(page, job["url"], job.get("description"))
         if description:
             print(f"    Description: {len(description)} chars")
         else:

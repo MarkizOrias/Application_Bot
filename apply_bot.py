@@ -430,7 +430,7 @@ def _advance(page: Page) -> str:
             return key
 
     # Fallback: scan button text
-    for text, key in [("Submit application", "submit"), ("Review", "review"), ("Next", "next")]:
+    for text, key in [("Submit application", "submit"), ("Review", "review"), ("Next", "next"), ("Continue", "next")]:
         for btn in page.query_selector_all("button"):
             try:
                 if not (btn.is_visible() and btn.is_enabled()):
@@ -494,25 +494,32 @@ def _run_modal(page: Page, profile: dict, cv_path: Path | None) -> bool:
     cv_uploaded = False
 
     for step in range(MAX_STEPS):
-        time.sleep(1.8)
+        time.sleep(1.0)
 
         if not page.query_selector(MODAL_SEL):
             print("      [apply] Modal closed unexpectedly")
             return False
 
-        # Upload CV once (first step that has a file input)
-        if cv_path and not cv_uploaded:
-            if page.query_selector("input[type='file']"):
-                cv_uploaded = _upload_resume(page, cv_path)
+        # On the review/submit step there are no fields to fill — skip scanning
+        is_review = bool(
+            page.query_selector("button[aria-label='Submit application']")
+            or page.query_selector("button[aria-label='Review your application']")
+        )
 
-        _uncheck_optionals(page)
-        _fill_inputs(page, profile)
-        _fill_textareas(page, profile)
-        _fill_selects(page, profile)
-        _fill_radios(page, profile)
-        _uncheck_optionals(page)  # second pass — some appear after fills
+        if not is_review:
+            # Upload CV once (first step that has a file input)
+            if cv_path and not cv_uploaded:
+                if page.query_selector("input[type='file']"):
+                    cv_uploaded = _upload_resume(page, cv_path)
 
-        time.sleep(0.8)
+            _uncheck_optionals(page)
+            _fill_inputs(page, profile)
+            _fill_textareas(page, profile)
+            _fill_selects(page, profile)
+            _fill_radios(page, profile)
+            _uncheck_optionals(page)  # second pass — some appear after fills
+
+        time.sleep(0.3)
         result = _advance(page)
         print(f"      [apply] Step {step + 1}: {result}")
 
@@ -549,15 +556,14 @@ def attempt_easy_apply(page: Page, job: dict, profile: dict, cv_path: Path | Non
     print(f"    [apply] {title} @ {company}")
 
     try:
-        # Navigate to job page and wait for LinkedIn's JS to render the content
-        page.goto(job["url"], wait_until="load", timeout=30000)
+        # Navigate and wait only until DOM is ready, then wait for a job element
+        page.goto(job["url"], wait_until="domcontentloaded", timeout=30000)
 
-        # Wait for the job title element — confirms the SPA has hydrated
         for sel in [
+            ".jobs-apply-button",
             ".jobs-unified-top-card__job-title",
             ".job-details-jobs-unified-top-card__job-title",
             ".jobs-details__main-content",
-            ".jobs-apply-button",
         ]:
             try:
                 page.wait_for_selector(sel, timeout=8000)
@@ -565,7 +571,7 @@ def attempt_easy_apply(page: Page, job: dict, profile: dict, cv_path: Path | Non
             except Exception:
                 pass
 
-        time.sleep(1.5)
+        time.sleep(0.5)
         print(f"      [apply] URL: {page.url[:90]}")
 
         # Find and click Easy Apply via JS.
@@ -645,6 +651,10 @@ def run_apply_session(
 
         if already_applied(df, url):
             print(f"  [apply] Skip (already applied): {job.get('title')} @ {job.get('company')}")
+            continue
+
+        if not job.get("easy_apply"):
+            print(f"  [apply] External apply — see URL in tracker: {job.get('title')} @ {job.get('company')}")
             continue
 
         cv_path = cv_map.get(url)

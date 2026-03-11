@@ -18,7 +18,10 @@ from datetime import datetime
 from pathlib import Path
 
 from cv_generator import generate_cvs_for_jobs
-from apply_bot import run_apply_session
+from apply_bot import (
+    load_tracker, upsert_jobs, mark_applied,
+    already_applied, save_tracker, attempt_easy_apply,
+)
 
 import pandas as pd
 from openpyxl import load_workbook
@@ -163,24 +166,65 @@ def extract_card(card) -> dict | None:
         m = re.search(r"/jobs/view/(\d+)", href or "")
         clean_url = f"https://www.linkedin.com/jobs/view/{m.group(1)}/" if m else href
 
-    easy_apply = bool(card.query_selector(".job-card-container__apply-method"))
-
     return {
         "title": title,
         "company": company,
         "location": location,
         "url": clean_url,
-        "easy_apply": easy_apply,
+        "easy_apply": False,  # filled in by _enrich_from_panel
+        "description": None,  # filled in by _enrich_from_panel
         "scraped_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "applied": False,
     }
 
 
+def _enrich_from_panel(page, card, job: dict) -> None:
+    """Click a job card to load the right-hand detail panel, then read the
+    description and apply-button type without navigating away from the search page."""
+    try:
+        link = card.query_selector("a[href*='/jobs/view/']")
+        if link:
+            link.click()
+        else:
+            card.click()
+
+        # Wait for the detail panel to populate
+        try:
+            page.wait_for_selector("#job-details", timeout=8000)
+        except Exception:
+            return
+
+        time.sleep(0.8)
+
+        # Read job description from the panel
+        desc_el = page.query_selector("#job-details")
+        if desc_el:
+            text = desc_el.inner_text().strip()
+            if len(text) > 100:
+                job["description"] = text[:4500]
+
+        # Check for "Applied X ago" feedback message — skip if already applied
+        for el in page.query_selector_all(".artdeco-inline-feedback__message"):
+            if "applied" in (el.inner_text() or "").lower():
+                job["linkedin_applied"] = True
+                return  # no need to read the rest
+
+        # Detect apply type from the panel button
+        # Easy Apply: <button id="jobs-apply-button-id" aria-label*="Easy Apply">
+        easy_btn = page.query_selector(
+            "button#jobs-apply-button-id"
+        ) or page.query_selector("button[aria-label*='Easy Apply']")
+        job["easy_apply"] = bool(easy_btn)
+
+    except Exception as exc:
+        print(f"    [warn] Panel read error for '{job.get('title')}': {exc}")
+
+
 def scrape_cards(page, max_per_search: int = 25) -> list[dict]:
-    """Wait for cards, scroll the jobs panel to load more, then extract all visible cards."""
+    """Wait for cards, scroll to load more, click each to enrich with description
+    and apply-type from the right-hand panel, then return all jobs."""
     jobs = []
 
-    # Current LinkedIn uses data-occludable-job-id on each <li>
     card_selector = (
         "li[data-occludable-job-id], "
         "li[data-job-id], "
@@ -206,8 +250,15 @@ def scrape_cards(page, max_per_search: int = 25) -> list[dict]:
     for card in cards[:max_per_search]:
         try:
             job = extract_card(card)
-            if job:
-                jobs.append(job)
+            if not job:
+                continue
+            _enrich_from_panel(page, card, job)
+            if job.get("linkedin_applied"):
+                print(
+                    f"    [skip] Already applied on LinkedIn: {job['title']} @ {job['company']}"
+                )
+                continue
+            jobs.append(job)
         except Exception as exc:
             print(f"    [warn] Card extraction error: {exc}")
 
@@ -367,7 +418,7 @@ def main() -> None:
             )
             input("    Press Enter once logged in > ")
 
-        JOBS_LIMIT = 1
+        JOBS_LIMIT = 3
 
         # --- Search each role until we have enough jobs ---
         for role in prefs["roles"]:
@@ -419,10 +470,44 @@ def main() -> None:
 
             time.sleep(1.5)  # Polite delay between searches
 
-        # --- Generate tailored CVs then attempt Easy Apply ---
+        # --- Per-job workflow: generate CV → apply, one job at a time ---
         if all_jobs:
-            cv_map = generate_cvs_for_jobs(all_jobs, profile, page, limit=JOBS_LIMIT)
-            run_apply_session(page, all_jobs[:JOBS_LIMIT], profile, cv_map)
+            df = load_tracker()
+            max_apps = profile["preferences"].get("max_applications_per_session", 15)
+            applied_count = 0
+
+            for job in all_jobs[:JOBS_LIMIT]:
+                if applied_count >= max_apps:
+                    print(f"\n[apply] Session limit reached ({max_apps}).")
+                    break
+
+                url = job.get("url", "")
+
+                if already_applied(df, url):
+                    print(f"  [skip] Already applied: {job['title']} @ {job['company']}")
+                    continue
+
+                # Generate tailored CV for this specific job
+                cv_map = generate_cvs_for_jobs([job], profile, page, limit=1)
+                if not cv_map:
+                    continue  # mismatch or render error — don't track
+
+                cv_path = cv_map.get(url)
+                df = upsert_jobs(df, [job])
+
+                if not job.get("easy_apply"):
+                    print(f"  [apply] External apply — see URL in tracker: {job['title']} @ {job['company']}")
+                    continue
+
+                success = attempt_easy_apply(page, job, profile, cv_path)
+                if success:
+                    df = mark_applied(df, url, cv_path)
+                    applied_count += 1
+                    print(f"    [apply] ✓ Applied ({applied_count}/{max_apps})")
+                time.sleep(2)
+
+            save_tracker(df)
+            print(f"\n[apply] Session complete — {applied_count} application(s) submitted.")
 
         context.close()
 
