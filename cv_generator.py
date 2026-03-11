@@ -50,6 +50,7 @@ LIGHT_GREY = colors.HexColor("#F3F3F3")
 # Profile loader
 # ---------------------------------------------------------------------------
 
+
 def load_profile() -> dict:
     with open(CONFIG_PATH, encoding="utf-8") as f:
         return json.load(f)
@@ -58,6 +59,7 @@ def load_profile() -> dict:
 # ---------------------------------------------------------------------------
 # Job description scraper
 # ---------------------------------------------------------------------------
+
 
 def fetch_job_description(page, url: str, prefetched: str | None = None) -> str:
     """Return the 'About the job' text. Uses prefetched if available, otherwise navigates."""
@@ -79,7 +81,8 @@ def fetch_job_description(page, url: str, prefetched: str | None = None) -> str:
         # LinkedIn renders an inline "... more" button as a <button> with text
         # "more" (and sometimes aria-expanded="false") inside the description div.
         # We try JS-based clicks so visibility/overlap doesn't block us.
-        expanded = page.evaluate("""() => {
+        expanded = page.evaluate(
+            """() => {
             const candidates = [
                 // standard show-more button class
                 ...document.querySelectorAll('button.show-more-less-html__button--more'),
@@ -96,10 +99,11 @@ def fetch_job_description(page, url: str, prefetched: str | None = None) -> str:
                 try { btn.click(); return true; } catch(e) {}
             }
             return false;
-        }""")
+        }"""
+        )
 
         if expanded:
-            time.sleep(1.0)   # let the DOM update after expand
+            time.sleep(1.0)  # let the DOM update after expand
 
         # --- Read the description ---
         # Try selectors from most to least specific; skip if result is tiny
@@ -122,7 +126,8 @@ def fetch_job_description(page, url: str, prefetched: str | None = None) -> str:
 
         # Last-resort: locate the "About the job" heading and walk up to its
         # section container, then grab all text inside it.
-        text = page.evaluate("""() => {
+        text = page.evaluate(
+            """() => {
             const heading = [...document.querySelectorAll('h1,h2,h3,h4')]
                 .find(h => /about the job/i.test(h.innerText));
             if (!heading) return '';
@@ -133,7 +138,8 @@ def fetch_job_description(page, url: str, prefetched: str | None = None) -> str:
                 if (el) el = el.parentElement;
             }
             return '';
-        }""")
+        }"""
+        )
 
         if text and len(text) > 100:
             return text[:4500]
@@ -149,6 +155,7 @@ def fetch_job_description(page, url: str, prefetched: str | None = None) -> str:
 # ---------------------------------------------------------------------------
 # Claude CV generation
 # ---------------------------------------------------------------------------
+
 
 def generate_tailored_cv(profile: dict, job: dict, description: str) -> dict:
     """Send profile + job description to Claude and return tailored CV as dict."""
@@ -257,6 +264,7 @@ Return this exact JSON structure:
 # ---------------------------------------------------------------------------
 # PDF rendering helpers
 # ---------------------------------------------------------------------------
+
 
 def _build_styles() -> dict:
     styles = {
@@ -387,6 +395,7 @@ def _find_logo(company: str) -> Path | None:
 # PDF rendering
 # ---------------------------------------------------------------------------
 
+
 def render_cv_pdf(cv: dict, profile: dict, job: dict, output_path: Path) -> None:
     """Render the tailored CV dict as a professional A4 PDF with photo and logos."""
     CVS_DIR.mkdir(parents=True, exist_ok=True)
@@ -398,7 +407,7 @@ def render_cv_pdf(cv: dict, profile: dict, job: dict, output_path: Path) -> None
     RIGHT_MARGIN = 1.8 * cm
     USABLE_W = A4[0] - LEFT_MARGIN - RIGHT_MARGIN
     PHOTO_COL = 2.6 * cm
-    TEXT_COL = USABLE_W - PHOTO_COL - 0.3 * cm   # 0.3 gap between columns
+    TEXT_COL = USABLE_W - PHOTO_COL - 0.3 * cm  # 0.3 gap between columns
 
     doc = SimpleDocTemplate(
         str(output_path),
@@ -432,29 +441,39 @@ def render_cv_pdf(cv: dict, profile: dict, job: dict, output_path: Path) -> None
         link_parts.append(f'<link href="{personal["github"]}">GitHub</link>')
     if personal.get("portfolio"):
         link_parts.append(f'<link href="{personal["portfolio"]}">Portfolio</link>')
-    links_para = Paragraph("  |  ".join(link_parts), styles["contact"]) if link_parts else Spacer(1, 1)
+    links_para = (
+        Paragraph("  |  ".join(link_parts), styles["contact"])
+        if link_parts
+        else Spacer(1, 1)
+    )
 
     photo_path = MEDIA_DIR / "Photo.png"
     if photo_path.exists():
         photo_img = _scaled_image(photo_path, height_cm=3.2, hAlign="LEFT")
-        header_data = [[
-            photo_img,
-            [name_para, Spacer(1, 3), contact_para, Spacer(1, 2), links_para],
-        ]]
+        header_data = [
+            [
+                photo_img,
+                [name_para, Spacer(1, 3), contact_para, Spacer(1, 2), links_para],
+            ]
+        ]
         header_table = Table(
             header_data,
             colWidths=[PHOTO_COL, TEXT_COL],
         )
-        header_table.setStyle(TableStyle([
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("ALIGN",  (0, 0), (0, 0),  "LEFT"),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING",  (0, 0), (0, 0),  0),
-            ("RIGHTPADDING",  (1, 0), (1, 0),  0),
-            ("LEFTPADDING",   (1, 0), (1, 0),  8),
-            ("TOPPADDING",    (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ]))
+        header_table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("ALIGN", (0, 0), (0, 0), "LEFT"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (0, 0), 0),
+                    ("RIGHTPADDING", (1, 0), (1, 0), 0),
+                    ("LEFTPADDING", (1, 0), (1, 0), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
         story.append(header_table)
     else:
         # No photo — centred layout fallback
@@ -474,24 +493,27 @@ def render_cv_pdf(cv: dict, profile: dict, job: dict, output_path: Path) -> None
     # ----------------------------------------------------------------- Skills
     if cv.get("skills"):
         story += _section("Core Skills", styles)
-        skill_list = cv["skills"][:9]   # 3 cols × 3 rows max
+        skill_list = cv["skills"][:9]  # 3 cols × 3 rows max
         cols = 3
         col_w = USABLE_W / cols
         rows = [skill_list[i : i + cols] for i in range(0, len(skill_list), cols)]
         while len(rows[-1]) < cols:
             rows[-1].append("")
         table_data = [
-            [Paragraph(f"• {s}", styles["skill_item"]) for s in row]
-            for row in rows
+            [Paragraph(f"• {s}", styles["skill_item"]) for s in row] for row in rows
         ]
         t = Table(table_data, colWidths=[col_w] * cols)
-        t.setStyle(TableStyle([
-            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 2),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
-            ("TOPPADDING",    (0, 0), (-1, -1), 2),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ]))
+        t.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ]
+            )
+        )
         story.append(t)
         story.append(Spacer(1, 4))
 
@@ -501,7 +523,10 @@ def render_cv_pdf(cv: dict, profile: dict, job: dict, output_path: Path) -> None
 
         # Group consecutive entries by company so the logo appears only once per company
         from itertools import groupby
-        for company, group in groupby(cv["experience"], key=lambda e: e.get("company", "")):
+
+        for company, group in groupby(
+            cv["experience"], key=lambda e: e.get("company", "")
+        ):
             entries = list(group)
             logo_path = _find_logo(company)
 
@@ -512,10 +537,12 @@ def render_cv_pdf(cv: dict, profile: dict, job: dict, output_path: Path) -> None
 
             for exp in entries:
                 story.append(Paragraph(exp.get("title", ""), styles["job_title"]))
-                story.append(Paragraph(
-                    f"{company}   ·   {exp.get('period', '')}",
-                    styles["job_meta"],
-                ))
+                story.append(
+                    Paragraph(
+                        f"{company}   ·   {exp.get('period', '')}",
+                        styles["job_meta"],
+                    )
+                )
                 for bullet in exp.get("bullets", []):
                     story.append(Paragraph(f"• {bullet}", styles["bullet"]))
                 story.append(Spacer(1, 5))
@@ -549,22 +576,29 @@ def render_cv_pdf(cv: dict, profile: dict, job: dict, output_path: Path) -> None
 # Orchestrator
 # ---------------------------------------------------------------------------
 
-def generate_cvs_for_jobs(jobs: list[dict], profile: dict, page, limit: int = 3) -> dict:
+
+def generate_cvs_for_jobs(
+    jobs: list[dict], profile: dict, page, limit: int = 3
+) -> tuple[dict, list[dict]]:
     """For each of the first `limit` jobs, scrape description, generate and save a tailored CV PDF.
-    Returns a dict mapping job URL -> PDF Path for successfully generated CVs."""
+    Returns (results, mismatches):
+      - results:   job URL -> PDF Path for successfully generated CVs
+      - mismatches: list of {url, title, company, reason} for profile-mismatch jobs
+    """
     CVS_DIR.mkdir(parents=True, exist_ok=True)
     target_jobs = jobs[:limit]
     results: dict = {}
+    mismatches: list[dict] = []
 
     print(f"\n{'=' * 60}")
     print(f"CV Generator — processing {len(target_jobs)} job(s)")
     print(f"Output dir: {CVS_DIR.resolve()}")
     print("=" * 60)
 
-    next_idx = len(list(CVS_DIR.glob("cv_*.pdf"))) + 1
-    for i, job in enumerate(target_jobs, start=next_idx):
-        filename = f"cv_{i:02d}.pdf"
-        output_path = CVS_DIR / filename
+    for i, job in enumerate(target_jobs, start=1):
+        company_slug = re.sub(r"[^\w]+", "_", job.get("company", "unknown")).strip("_")[:30]
+        title_slug = re.sub(r"[^\w]+", "_", job.get("title", "job")).strip("_")[:30]
+        output_path = CVS_DIR / f"{company_slug}_{title_slug}.pdf"
 
         print(f"\n[{i}/{len(target_jobs)}] {job['title']} @ {job['company']}")
 
@@ -580,7 +614,14 @@ def generate_cvs_for_jobs(jobs: list[dict], profile: dict, page, limit: int = 3)
             tailored_cv = generate_tailored_cv(profile, job, description)
         except ValueError as exc:
             if str(exc).startswith("JOB_MISMATCH"):
-                print(f"    [skip] Not a match — {str(exc)[13:]}")
+                reason = str(exc)[13:]
+                print(f"    [skip] Not a match — {reason}")
+                mismatches.append({
+                    "url": job["url"],
+                    "title": job.get("title", ""),
+                    "company": job.get("company", ""),
+                    "reason": reason,
+                })
             else:
                 print(f"    [error] Claude generation failed: {exc}")
             continue
@@ -598,5 +639,7 @@ def generate_cvs_for_jobs(jobs: list[dict], profile: dict, page, limit: int = 3)
 
         time.sleep(1.5)  # polite pause between API calls
 
-    print(f"\n[cv] Done. {len(results)}/{len(target_jobs)} CV(s) saved to {CVS_DIR.resolve()}")
-    return results
+    print(
+        f"\n[cv] Done. {len(results)}/{len(target_jobs)} CV(s) saved to {CVS_DIR.resolve()}"
+    )
+    return results, mismatches

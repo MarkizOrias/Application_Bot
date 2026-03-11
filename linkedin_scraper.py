@@ -19,8 +19,14 @@ from pathlib import Path
 
 from cv_generator import generate_cvs_for_jobs
 from apply_bot import (
-    load_tracker, upsert_jobs, mark_applied,
-    already_applied, save_tracker, attempt_easy_apply,
+    load_tracker,
+    upsert_jobs,
+    mark_applied,
+    already_applied,
+    save_tracker,
+    attempt_easy_apply,
+    load_mismatch_log,
+    save_mismatch,
 )
 
 import pandas as pd
@@ -418,7 +424,7 @@ def main() -> None:
             )
             input("    Press Enter once logged in > ")
 
-        JOBS_LIMIT = 3
+        JOBS_LIMIT = 10
 
         # --- Search each role until we have enough jobs ---
         for role in prefs["roles"]:
@@ -473,10 +479,11 @@ def main() -> None:
         # --- Per-job workflow: generate CV → apply, one job at a time ---
         if all_jobs:
             df = load_tracker()
+            mismatched_urls = load_mismatch_log()
             max_apps = profile["preferences"].get("max_applications_per_session", 15)
             applied_count = 0
 
-            for job in all_jobs[:JOBS_LIMIT]:
+            for job in all_jobs:
                 if applied_count >= max_apps:
                     print(f"\n[apply] Session limit reached ({max_apps}).")
                     break
@@ -484,11 +491,22 @@ def main() -> None:
                 url = job.get("url", "")
 
                 if already_applied(df, url):
-                    print(f"  [skip] Already applied: {job['title']} @ {job['company']}")
+                    print(
+                        f"  [skip] Already applied: {job['title']} @ {job['company']}"
+                    )
+                    continue
+
+                if url in mismatched_urls:
+                    print(
+                        f"  [skip] Previous mismatch: {job['title']} @ {job['company']}"
+                    )
                     continue
 
                 # Generate tailored CV for this specific job
-                cv_map = generate_cvs_for_jobs([job], profile, page, limit=1)
+                cv_map, new_mismatches = generate_cvs_for_jobs([job], profile, page, limit=1)
+                for m in new_mismatches:
+                    save_mismatch(m["url"], m["title"], m["company"], m["reason"])
+                    mismatched_urls.add(m["url"])
                 if not cv_map:
                     continue  # mismatch or render error — don't track
 
@@ -496,7 +514,9 @@ def main() -> None:
                 df = upsert_jobs(df, [job])
 
                 if not job.get("easy_apply"):
-                    print(f"  [apply] External apply — see URL in tracker: {job['title']} @ {job['company']}")
+                    print(
+                        f"  [apply] External apply — see URL in tracker: {job['title']} @ {job['company']}"
+                    )
                     continue
 
                 success = attempt_easy_apply(page, job, profile, cv_path)
@@ -507,7 +527,9 @@ def main() -> None:
                 time.sleep(2)
 
             save_tracker(df)
-            print(f"\n[apply] Session complete — {applied_count} application(s) submitted.")
+            print(
+                f"\n[apply] Session complete — {applied_count} application(s) submitted."
+            )
 
         context.close()
 

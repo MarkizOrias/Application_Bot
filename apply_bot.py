@@ -26,6 +26,7 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 load_dotenv()
 
 TRACKER_PATH = Path("output/linkedin_tracker.xlsx")
+MISMATCH_PATH = Path("output/mismatch_log.json")
 LI_BLUE = "0A66C2"
 
 TRACKER_COLS = [
@@ -127,6 +128,44 @@ def save_tracker(df: pd.DataFrame) -> None:
 
 
 # ===========================================================================
+# Mismatch log — jobs Claude determined are not a profile fit
+# ===========================================================================
+
+def load_mismatch_log() -> set[str]:
+    """Return the set of job URLs previously marked as profile mismatches."""
+    if MISMATCH_PATH.exists():
+        try:
+            data = json.loads(MISMATCH_PATH.read_text(encoding="utf-8"))
+            return set(data.keys())
+        except Exception:
+            pass
+    return set()
+
+
+def save_mismatch(url: str, title: str, company: str, reason: str) -> None:
+    """Append a mismatch entry to the persistent log (no-op if already present)."""
+    MISMATCH_PATH.parent.mkdir(parents=True, exist_ok=True)
+    data: dict = {}
+    if MISMATCH_PATH.exists():
+        try:
+            data = json.loads(MISMATCH_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    if url in data:
+        return
+    data[url] = {
+        "title": title,
+        "company": company,
+        "reason": reason,
+        "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+    }
+    MISMATCH_PATH.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    print(f"  [mismatch] Logged: {title} @ {company}")
+
+
+# ===========================================================================
 # Question-answering helpers
 # ===========================================================================
 
@@ -141,206 +180,132 @@ def _exp_years(profile: dict) -> str:
     return str(max(1, datetime.now().year - min(all_years)))
 
 
-def _rule_answer(label: str, profile: dict) -> str | None:
-    """Return a rule-based answer for common form labels, or None if no rule matches."""
-    ll = label.lower().strip()
-    p = profile["personal"]
-    name_parts = p.get("full_name", "").split()
 
-    rules = [
-        (r"first\s*name",                       lambda: name_parts[0] if name_parts else ""),
-        (r"last\s*name|surname|family\s*name",  lambda: name_parts[-1] if len(name_parts) > 1 else ""),
-        (r"full\s*name",                         lambda: p.get("full_name", "")),
-        (r"email",                               lambda: p.get("email", "")),
-        (r"phone|mobile|telephone",              lambda: p.get("phone", "")),
-        (r"\bcity\b|\btown\b",                   lambda: p.get("location", "").split(",")[0].strip()),
-        (r"country",                             lambda: "Switzerland"),
-        (r"linkedin",                            lambda: p.get("linkedin", "")),
-        (r"github",                              lambda: p.get("github", "")),
-        (r"portfolio|personal\s*url|website",    lambda: p.get("portfolio", "")),
-        (r"years?.{0,30}experience|experience.{0,30}years?",
-                                                 lambda: _exp_years(profile)),
-        (r"salary|compensation|ctc|pay",         lambda: str(profile["preferences"].get("min_salary_usd", 70000))),
-        (r"authoriz|eligible.{0,20}work|right\s*to\s*work|work\s*permit",
-                                                 lambda: "Yes"),
-        (r"require.{0,20}sponsor|need.{0,20}sponsor|visa\s*sponsor",
-                                                 lambda: "No"),
-        (r"relocat",                             lambda: "No"),
-        (r"notice\s*period|notice\s*time",       lambda: "2 weeks"),
-        (r"start\s*date|available\s*from|earliest\s*start",
-                                                 lambda: "As soon as possible"),
-        (r"how\s*did\s*you\s*hear|source|referred\s*by",
-                                                 lambda: "LinkedIn"),
-        (r"cover\s*letter",                      lambda: ""),
-    ]
-
-    for pattern, fn in rules:
-        if re.search(pattern, ll):
-            return fn()
-    return None
-
-
-def _haiku_answer(question: str, options: list[str], profile: dict) -> str:
-    """Use Claude Haiku to answer questions that don't match any rule."""
-    api_key = os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
-    client = anthropic.Anthropic(api_key=api_key)
-
+def _candidate_context(profile: dict) -> dict:
+    """Build a compact candidate snapshot to send with every Claude request."""
     cv = profile.get("cv", {})
-    snapshot = {
-        "name": profile["personal"].get("full_name"),
-        "location": profile["personal"].get("location"),
-        "experience_years": _exp_years(profile),
-        "work_auth": profile.get("work_authorization", {}),
-        "last_title": (cv.get("experience") or [{}])[0].get("title", ""),
-        "last_company": (cv.get("experience") or [{}])[0].get("company", ""),
+    p = profile["personal"]
+    return {
+        "full_name": p.get("full_name", ""),
+        "email": p.get("email", ""),
+        "phone": p.get("phone", ""),
+        "location": p.get("location", ""),
+        "linkedin": p.get("linkedin", ""),
+        "github": p.get("github", ""),
+        "total_experience_years": _exp_years(profile),
+        "work_authorization": profile.get("work_authorization", {}),
         "min_salary_usd": profile["preferences"].get("min_salary_usd", 70000),
+        "notice_period": "2 weeks",
+        "skills": cv.get("skills", []),
+        "experience": [
+            {
+                "title": e.get("title", ""),
+                "company": e.get("company", ""),
+                "period": e.get("period", ""),
+                "bullets": e.get("bullets", []),
+            }
+            for e in (cv.get("experience") or [])[:5]
+        ],
     }
 
-    opts_line = f"\nChoose from (copy verbatim): {options}" if options else ""
-    prompt = (
-        f"You are filling a LinkedIn job application for this candidate.\n"
-        f"Candidate: {json.dumps(snapshot)}\n"
-        f"Question: {question}{opts_line}\n\n"
-        "Return ONLY the answer — no explanation, no punctuation wrapper."
-    )
-
-    try:
-        resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=100,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return resp.content[0].text.strip()
-    except Exception as exc:
-        print(f"      [apply] Haiku Q&A error: {exc}")
-        return options[0] if options else ""
-
 
 # ===========================================================================
-# Form interaction helpers
+# Form scraping — collect all questions from the current modal step
 # ===========================================================================
 
-def _get_label(page: Page, el) -> str:
-    """Return the label text associated with a form element."""
-    el_id = el.get_attribute("id")
-    if el_id:
-        lbl = page.query_selector(f"label[for='{el_id}']")
-        if lbl:
-            return lbl.inner_text().strip()
+def _scrape_form_fields(page: Page) -> list[dict]:
+    """Return a list of field descriptors for every visible, unfilled form field."""
+    fields = []
 
-    # Walk up the DOM for a label/legend ancestor
-    text = el.evaluate("""el => {
-        let node = el.parentElement;
-        for (let i = 0; i < 7; i++) {
-            if (!node) break;
-            const lbl = node.querySelector('label, legend, [class*="label"]');
-            if (lbl && lbl.innerText.trim().length > 1) return lbl.innerText.trim();
-            node = node.parentElement;
-        }
-        return '';
-    }""")
-    return (text or "").strip()
+    def _label_for(el) -> str:
+        el_id = el.get_attribute("id") or ""
+        if el_id:
+            lbl = page.query_selector(f"label[for='{el_id}']")
+            if lbl:
+                return lbl.inner_text().strip()
+        return el.evaluate("""el => {
+            let node = el.parentElement;
+            for (let i = 0; i < 7; i++) {
+                if (!node) break;
+                const lbl = node.querySelector('label, legend, [class*="label"]');
+                if (lbl && lbl.innerText.trim().length > 1) return lbl.innerText.trim();
+                node = node.parentElement;
+            }
+            return '';
+        }""").strip()
 
-
-def _fill_inputs(page: Page, profile: dict) -> None:
-    """Fill visible, empty text / number / tel / email inputs."""
+    # --- text / number / tel / email inputs ---
     for inp in page.query_selector_all(
         "input[type='text'], input[type='number'], input[type='tel'], input[type='email']"
     ):
         try:
-            if not inp.is_visible():
+            if not inp.is_visible() or (inp.input_value() or "").strip():
                 continue
-            if (inp.input_value() or "").strip():
-                continue
-            label = _get_label(page, inp)
+            label = _label_for(inp)
             if not label:
                 continue
-            answer = _rule_answer(label, profile)
-            if answer is None:
-                answer = _haiku_answer(label, [], profile)
-            if answer:
-                inp.triple_click()
-                inp.fill(answer)
-        except Exception as exc:
-            print(f"      [apply] input error: {exc}")
+            inp_id = inp.get_attribute("id") or label
+            # LinkedIn uses type="text" with id ending in "-numeric" for whole-number fields
+            is_numeric = (
+                inp.get_attribute("type") == "number"
+                or (inp_id or "").endswith("-numeric")
+            )
+            fields.append({
+                "id": inp_id,
+                "kind": "number" if is_numeric else "text",
+                "label": label,
+                "options": [],
+            })
+        except Exception:
+            pass
 
-
-def _fill_textareas(page: Page, profile: dict) -> None:
+    # --- textareas ---
     for ta in page.query_selector_all("textarea"):
         try:
             if not ta.is_visible() or (ta.input_value() or "").strip():
                 continue
-            label = _get_label(page, ta)
+            label = _label_for(ta)
             if not label:
                 continue
-            answer = _rule_answer(label, profile) or _haiku_answer(label, [], profile)
-            if answer:
-                ta.fill(answer)
-        except Exception as exc:
-            print(f"      [apply] textarea error: {exc}")
+            ta_id = ta.get_attribute("id") or label
+            fields.append({"id": ta_id, "kind": "textarea", "label": label, "options": []})
+        except Exception:
+            pass
 
-
-def _fill_selects(page: Page, profile: dict) -> None:
+    # --- selects ---
     for sel in page.query_selector_all("select"):
         try:
             if not sel.is_visible():
                 continue
-            current = sel.input_value() or ""
-            if current and current.lower() not in ("", "select an option", "-- none --"):
+            current = (sel.input_value() or "").lower()
+            if current and current not in ("", "select an option", "-- none --"):
                 continue
-            label = _get_label(page, sel)
+            label = _label_for(sel)
             if not label:
                 continue
-
-            # Collect human-readable option texts
-            sel_id = sel.get_attribute("id")
-            opt_sel = f"#{sel_id} option" if sel_id else "option"
+            sel_id = sel.get_attribute("id") or label
             options = []
-            for opt in page.query_selector_all(opt_sel):
+            for opt in page.query_selector_all(f"#{sel_id} option" if sel.get_attribute("id") else "option"):
                 val = opt.get_attribute("value") or ""
                 txt = opt.inner_text().strip()
                 if val and txt and txt.lower() not in ("select an option", "-- none --", ""):
                     options.append(txt)
+            fields.append({"id": sel_id, "kind": "select", "label": label, "options": options})
+        except Exception:
+            pass
 
-            answer = _rule_answer(label, profile)
-            if answer is None:
-                answer = _haiku_answer(label, options, profile)
-            if not answer:
-                continue
-
-            # Try exact match first, then contains match
-            matched = False
-            for opt in page.query_selector_all(opt_sel):
-                txt = opt.inner_text().strip()
-                if txt.lower() == answer.lower():
-                    sel.select_option(label=txt)
-                    matched = True
-                    break
-            if not matched:
-                for opt in page.query_selector_all(opt_sel):
-                    txt = opt.inner_text().strip()
-                    if answer.lower() in txt.lower() or txt.lower() in answer.lower():
-                        sel.select_option(label=txt)
-                        break
-        except Exception as exc:
-            print(f"      [apply] select error: {exc}")
-
-
-def _fill_radios(page: Page, profile: dict) -> None:
-    """Answer radio groups that have no selection yet."""
-    names: set[str] = set()
+    # --- radio groups ---
+    radio_names: set[str] = set()
     for r in page.query_selector_all("input[type='radio']"):
         n = r.get_attribute("name")
         if n:
-            names.add(n)
+            radio_names.add(n)
 
-    for name in names:
+    for name in radio_names:
         try:
             radios = page.query_selector_all(f"input[type='radio'][name='{name}']")
             if not radios or any(r.is_checked() for r in radios):
                 continue
-
-            # Find the group question from fieldset legend or nearest label-like element
             safe_name = name.replace('"', '\\"')
             question = page.evaluate(f"""() => {{
                 const r = document.querySelector('input[type="radio"][name="{safe_name}"]');
@@ -354,34 +319,158 @@ def _fill_radios(page: Page, profile: dict) -> None:
                 }}
                 return '';
             }}""")
-
-            option_map: dict[str, object] = {}
+            options = []
             for r in radios:
                 rid = r.get_attribute("id")
-                lbl = page.query_selector(f"label[for='{rid}']") if rid else None
-                if lbl:
-                    option_map[lbl.inner_text().strip()] = r
+                lbl_el = page.query_selector(f"label[for='{rid}']") if rid else None
+                if lbl_el:
+                    opt_text = lbl_el.inner_text().strip()
+                else:
+                    # LinkedIn renders toggle-style radios without <label> elements;
+                    # option text is in the value or data attribute instead
+                    opt_text = (
+                        r.get_attribute("data-test-text-selectable-option__input")
+                        or r.get_attribute("value")
+                        or ""
+                    ).strip()
+                if opt_text:
+                    options.append(opt_text)
+            if options:
+                fields.append({
+                    "id": f"radio::{name}",
+                    "kind": "radio",
+                    "label": question or options[0],
+                    "options": options,
+                })
+        except Exception:
+            pass
 
-            options = list(option_map.keys())
-            if not options:
-                continue
+    return fields
 
-            answer = _rule_answer(question or options[0], profile)
-            if answer is None:
-                answer = _haiku_answer(question or "", options, profile)
 
-            # Click best-matching radio
-            clicked = False
-            if answer:
-                for txt, radio_el in option_map.items():
-                    if answer.lower() == txt.lower() or answer.lower() in txt.lower():
-                        radio_el.click()
-                        clicked = True
-                        break
-            if not clicked:
-                list(option_map.values())[0].click()
+# ===========================================================================
+# Claude-driven batch answer
+# ===========================================================================
+
+def _claude_fill_form(page: Page, profile: dict) -> None:
+    """
+    Scrape all unfilled fields from the current modal step, ask Claude Haiku
+    to answer them all at once with full candidate context, then apply answers.
+    """
+    fields = _scrape_form_fields(page)
+    if not fields:
+        return
+
+    # Build question list for the prompt
+    q_lines = []
+    for f in fields:
+        opts = f" [options: {', '.join(f['options'])}]" if f["options"] else ""
+        num_hint = " (integer 0-99)" if f["kind"] == "number" else ""
+        q_lines.append(f'  "{f["id"]}": "{f["label"]}"{opts}{num_hint}')
+
+    candidate = _candidate_context(profile)
+    prompt = (
+        "You are filling a LinkedIn Easy Apply form on behalf of this candidate.\n\n"
+        f"CANDIDATE:\n{json.dumps(candidate, indent=2)}\n\n"
+        "FORM FIELDS (id → question):\n"
+        + "\n".join(q_lines)
+        + "\n\n"
+        "Return a JSON object where each key is a field id and the value is the answer.\n"
+        "Rules:\n"
+        "- For 'number' fields return only a digit string, e.g. \"5\"\n"
+        "- For 'select' or 'radio' fields copy the answer verbatim from the listed options\n"
+        "- For 'textarea' fields write 2-4 concise sentences appropriate for a job application\n"
+        "- If a field is not relevant or unknown, return an empty string\n"
+        "- Return ONLY valid JSON, no markdown fences, no extra text"
+    )
+
+    api_key = os.environ.get("API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+    client = anthropic.Anthropic(api_key=api_key)
+    try:
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=600,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.content[0].text.strip()
+        # Strip accidental markdown fences
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+        answers: dict = json.loads(raw)
+    except Exception as exc:
+        print(f"      [apply] Claude form fill error: {exc}")
+        return
+
+    print(f"      [apply] Claude answered {len(answers)} field(s)")
+
+    # Apply answers back to the DOM
+    for f in fields:
+        answer = (answers.get(f["id"]) or "").strip()
+        if not answer:
+            continue
+        try:
+            kind = f["kind"]
+            fid = f["id"]
+            label = f["label"]
+
+            if kind in ("text", "textarea", "number"):
+                if kind == "number":
+                    digits = re.sub(r"[^\d]", "", answer.split(".")[0])
+                    answer = digits if digits else "0"
+                # Use attribute selector [id="..."] so IDs with special CSS characters
+                # (colons, URN format) work. locator.fill() simulates real keyboard input
+                # which properly updates React controlled component state — unlike the
+                # native value setter trick which leaves React's fiber state out of sync.
+                loc = page.locator(f'[id="{fid}"]')
+                if loc.count() > 0:
+                    loc.first.click()
+                    loc.first.fill(answer)
+                    loc.first.dispatch_event("blur")
+
+            elif kind == "select":
+                sel_el = page.query_selector(f"#{fid}") or page.query_selector(f"[id='{fid}']")
+                if sel_el and sel_el.is_visible():
+                    matched = False
+                    for txt in f["options"]:
+                        if txt.lower() == answer.lower():
+                            sel_el.select_option(label=txt)
+                            matched = True
+                            break
+                    if not matched:
+                        for txt in f["options"]:
+                            if answer.lower() in txt.lower() or txt.lower() in answer.lower():
+                                sel_el.select_option(label=txt)
+                                break
+
+            elif kind == "radio":
+                radio_name = fid.replace("radio::", "", 1)
+                # Use JS to match by label text, data attribute, or value — avoids
+                # CSS selector issues with URN-style name attributes.
+                page.evaluate(
+                    """([radioName, answerLower]) => {
+                        for (const r of document.querySelectorAll('input[type="radio"]')) {
+                            if (r.name !== radioName) continue;
+                            const lbl = r.id
+                                ? document.querySelector('label[for="' + r.id + '"]')
+                                : null;
+                            const txt = (lbl
+                                ? lbl.innerText
+                                : (r.getAttribute('data-test-text-selectable-option__input')
+                                   || r.value || '')
+                            ).toLowerCase().trim();
+                            if (txt === answerLower || txt.includes(answerLower)
+                                    || answerLower.includes(txt)) {
+                                r.click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    }""",
+                    [radio_name, answer.lower()],
+                )
+
         except Exception as exc:
-            print(f"      [apply] radio error: {exc}")
+            print(f"      [apply] apply answer error for '{label}': {exc}")
 
 
 def _uncheck_optionals(page: Page) -> None:
@@ -394,7 +483,13 @@ def _uncheck_optionals(page: Page) -> None:
         try:
             if not cb.is_visible() or not cb.is_checked():
                 continue
-            label = _get_label(page, cb).lower()
+            cb_id = cb.get_attribute("id")
+            lbl_el = page.query_selector(f"label[for='{cb_id}']") if cb_id else None
+            label = (lbl_el.inner_text().strip() if lbl_el else cb.evaluate(
+                "el => { let n=el.parentElement; for(let i=0;i<5;i++){if(!n)break;"
+                "const l=n.querySelector('label,[class*=\"label\"]');"
+                "if(l&&l.innerText.trim().length>1)return l.innerText.trim();n=n.parentElement;}return '';}"
+            )).lower()
             if any(pat in label for pat in SPAM_PATTERNS):
                 cb.click()
                 print(f"      [apply] Unchecked: '{label[:60]}'")
@@ -492,6 +587,8 @@ def _run_modal(page: Page, profile: dict, cv_path: Path | None) -> bool:
     MODAL_SEL = "div.jobs-easy-apply-modal, [data-test-modal-id='easy-apply-modal']"
     MAX_STEPS = 12
     cv_uploaded = False
+    last_result: str = ""
+    repeat_count: int = 0
 
     for step in range(MAX_STEPS):
         time.sleep(1.0)
@@ -500,28 +597,49 @@ def _run_modal(page: Page, profile: dict, cv_path: Path | None) -> bool:
             print("      [apply] Modal closed unexpectedly")
             return False
 
-        # On the review/submit step there are no fields to fill — skip scanning
+        # On the submit step there are no fields to fill — skip scanning.
+        # NOTE: "Review your application" button appears on the LAST form step
+        # (e.g. Additional Questions) as the advance button, so we must NOT treat
+        # that step as a review step — only the final Submit page is skipped.
         is_review = bool(
             page.query_selector("button[aria-label='Submit application']")
-            or page.query_selector("button[aria-label='Review your application']")
         )
 
         if not is_review:
             # Upload CV once (first step that has a file input)
             if cv_path and not cv_uploaded:
                 if page.query_selector("input[type='file']"):
-                    cv_uploaded = _upload_resume(page, cv_path)
+                    # Temporarily rename to FirstName_LastName.pdf so the recruiter
+                    # sees a clean name; rename back to company_position after upload
+                    name_slug = "_".join(
+                        profile["personal"].get("full_name", "Candidate").split()
+                    )
+                    temp_path = cv_path.parent / f"{name_slug}.pdf"
+                    cv_path.rename(temp_path)
+                    try:
+                        cv_uploaded = _upload_resume(page, temp_path)
+                    finally:
+                        temp_path.rename(cv_path)
 
             _uncheck_optionals(page)
-            _fill_inputs(page, profile)
-            _fill_textareas(page, profile)
-            _fill_selects(page, profile)
-            _fill_radios(page, profile)
+            _claude_fill_form(page, profile)
             _uncheck_optionals(page)  # second pass — some appear after fills
 
         time.sleep(0.3)
         result = _advance(page)
         print(f"      [apply] Step {step + 1}: {result}")
+
+        # Detect stuck loop — same non-submit button clicked 3 times in a row
+        if result == last_result and result not in ("submit", "stuck"):
+            repeat_count += 1
+            if repeat_count >= 3:
+                err_el = page.query_selector(".artdeco-inline-feedback--error")
+                err_msg = err_el.inner_text()[:120] if err_el else "unknown"
+                print(f"      [apply] Stuck on '{result}' × {repeat_count} — form error: {err_msg}")
+                return False
+        else:
+            repeat_count = 0
+        last_result = result
 
         if result == "submit":
             time.sleep(2)
