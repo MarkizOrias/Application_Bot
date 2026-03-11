@@ -424,31 +424,39 @@ def main() -> None:
             )
             input("    Press Enter once logged in > ")
 
-        JOBS_LIMIT = 10
+        df = load_tracker()
+        mismatched_urls = load_mismatch_log()
+        max_apps = profile["preferences"].get("max_applications_per_session", 15)
+        applied_count = 0
 
-        # --- Search each role until we have enough jobs ---
+        # --- Search → CV → apply pipeline (one card at a time) ---
         for role in prefs["roles"]:
-            if len(all_jobs) >= JOBS_LIMIT:
+            if applied_count >= max_apps:
+                print(f"\n[apply] Session limit reached ({max_apps}).")
                 break
 
-            url = build_search_url(role, easy_apply)
+            search_url = build_search_url(role, easy_apply)
             print(f"\nSearching: {role}")
-            print(f"  URL: {url}")
+            print(f"  URL: {search_url}")
 
             try:
-                page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
                 time.sleep(2)
 
                 cards = scrape_cards(page)
                 new_count = 0
 
                 for job in cards:
-                    if len(all_jobs) >= JOBS_LIMIT:
+                    if applied_count >= max_apps:
+                        print(f"\n[apply] Session limit reached ({max_apps}).")
                         break
 
+                    job_url = job["url"]
+
                     # De-duplicate by URL
-                    if job["url"] in seen_urls:
+                    if job_url in seen_urls:
                         continue
+                    seen_urls.add(job_url)
 
                     excluded, reason = is_excluded(job, profile)
                     if excluded:
@@ -458,16 +466,51 @@ def main() -> None:
                         continue
 
                     job["search_role"] = role
-                    seen_urls.add(job["url"])
                     all_jobs.append(job)
                     new_count += 1
                     print(
-                        f"  [+] Added : {job['title']} @ {job['company']} | {job['location']}"
+                        f"  [+] Found : {job['title']} @ {job['company']} | {job['location']}"
                     )
 
-                print(
-                    f"  --> {new_count} new jobs added (total so far: {len(all_jobs)})"
-                )
+                    # --- Immediately process this job ---
+                    if already_applied(df, job_url):
+                        print(
+                            f"  [skip] Already applied: {job['title']} @ {job['company']}"
+                        )
+                        continue
+
+                    if job_url in mismatched_urls:
+                        print(
+                            f"  [skip] Previous mismatch: {job['title']} @ {job['company']}"
+                        )
+                        continue
+
+                    cv_map, new_mismatches = generate_cvs_for_jobs(
+                        [job], profile, page, limit=1
+                    )
+                    for m in new_mismatches:
+                        save_mismatch(m["url"], m["title"], m["company"], m["reason"])
+                        mismatched_urls.add(m["url"])
+                    if not cv_map:
+                        continue  # mismatch or render error — don't track
+
+                    cv_path = cv_map.get(job_url)
+                    df = upsert_jobs(df, [job])
+
+                    if not job.get("easy_apply"):
+                        print(
+                            f"  [apply] External apply — see URL in tracker: {job['title']} @ {job['company']}"
+                        )
+                        continue
+
+                    success = attempt_easy_apply(page, job, profile, cv_path)
+                    if success:
+                        df = mark_applied(df, job_url, cv_path)
+                        applied_count += 1
+                        print(f"    [apply] ✓ Applied ({applied_count}/{max_apps})")
+                    time.sleep(2)
+
+                print(f"  --> {new_count} new jobs found for '{role}'")
 
             except PlaywrightTimeout:
                 print(f"  [!] Timeout navigating to search for '{role}' - skipping")
@@ -476,60 +519,10 @@ def main() -> None:
 
             time.sleep(1.5)  # Polite delay between searches
 
-        # --- Per-job workflow: generate CV → apply, one job at a time ---
-        if all_jobs:
-            df = load_tracker()
-            mismatched_urls = load_mismatch_log()
-            max_apps = profile["preferences"].get("max_applications_per_session", 15)
-            applied_count = 0
-
-            for job in all_jobs:
-                if applied_count >= max_apps:
-                    print(f"\n[apply] Session limit reached ({max_apps}).")
-                    break
-
-                url = job.get("url", "")
-
-                if already_applied(df, url):
-                    print(
-                        f"  [skip] Already applied: {job['title']} @ {job['company']}"
-                    )
-                    continue
-
-                if url in mismatched_urls:
-                    print(
-                        f"  [skip] Previous mismatch: {job['title']} @ {job['company']}"
-                    )
-                    continue
-
-                # Generate tailored CV for this specific job
-                cv_map, new_mismatches = generate_cvs_for_jobs([job], profile, page, limit=1)
-                for m in new_mismatches:
-                    save_mismatch(m["url"], m["title"], m["company"], m["reason"])
-                    mismatched_urls.add(m["url"])
-                if not cv_map:
-                    continue  # mismatch or render error — don't track
-
-                cv_path = cv_map.get(url)
-                df = upsert_jobs(df, [job])
-
-                if not job.get("easy_apply"):
-                    print(
-                        f"  [apply] External apply — see URL in tracker: {job['title']} @ {job['company']}"
-                    )
-                    continue
-
-                success = attempt_easy_apply(page, job, profile, cv_path)
-                if success:
-                    df = mark_applied(df, url, cv_path)
-                    applied_count += 1
-                    print(f"    [apply] ✓ Applied ({applied_count}/{max_apps})")
-                time.sleep(2)
-
-            save_tracker(df)
-            print(
-                f"\n[apply] Session complete — {applied_count} application(s) submitted."
-            )
+        save_tracker(df)
+        print(
+            f"\n[apply] Session complete — {applied_count} application(s) submitted."
+        )
 
         context.close()
 
