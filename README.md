@@ -1,6 +1,6 @@
 # Application Bot
 
-An automated job-application pipeline that scrapes LinkedIn for relevant listings, then uses the **Anthropic Claude API** to generate a tailor-made CV in PDF format for each position — all driven by a single source-of-truth profile.
+An automated job-application pipeline that scrapes LinkedIn for relevant listings, then uses the **Anthropic Claude API** to generate a tailor-made CV in PDF format for each position and submits Easy Apply applications — all driven by a single source-of-truth profile.
 
 ---
 
@@ -25,25 +25,18 @@ An automated job-application pipeline that scrapes LinkedIn for relevant listing
 
 ## Architecture Overview
 
+The bot processes jobs **one at a time** — scrape a card, evaluate fit, generate a tailored CV, and apply — before moving on to the next. It stops once `max_applications_per_session` successful applications have been submitted.
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    linkedin_scraper.py                  │
-│                                                         │
-│  1. Launches Chrome with CDP (remote debugging)         │
-│  2. Searches LinkedIn for each role in profile.json     │
-│  3. Collects up to JOBS_LIMIT job cards                 │
-│  4. Filters out excluded companies / keywords           │
-│  5. Saves all listings → output/linkedin_listings.xlsx  │
-│                                                         │
-│  For each job (up to JOBS_LIMIT):                       │
-│     └─► cv_generator.py                                 │
-│           ├─ Navigates to job URL, expands description  │
-│           ├─ Calls Claude (claude-opus-4-6) with:       │
-│           │    • config/profile.json  (master CV data)  │
-│           │    • Job description text                   │
-│           ├─ Claude returns tailored CV as JSON         │
-│           └─ Renders PDF → output/cvs/<company>_<role>  │
-└─────────────────────────────────────────────────────────┘
+For each job card scraped from LinkedIn:
+  1. Skip if already applied (tracker) or previously found to be a mismatch (mismatch log)
+  2. Fetch the full job description (Playwright)
+  3. Ask Claude: does this job match your profile?
+     └─ Mismatch → log to mismatch_log.json, move on
+     └─ Match    → generate tailored CV JSON, render PDF
+  4. Submit Easy Apply via Playwright (Claude fills any free-text fields)
+  5. Record success in linkedin_tracker.xlsx
+  Repeat until max_applications_per_session successful applications
 ```
 
 **Data flow:**
@@ -59,11 +52,13 @@ config/profile.json     ← Machine-readable profile: personal info,
       │                    preferences, full CV content
       │
       ├──► linkedin_scraper.py  ──► output/linkedin_listings_<ts>.xlsx
-      │
+      │         │                   output/linkedin_tracker.xlsx
+      │         │                   output/mismatch_log.json
+      │         │
       └──► cv_generator.py
                 │
                 ├── Playwright: fetches live job description
-                ├── Claude API: generates tailored CV JSON
+                ├── Claude API: evaluates fit, generates tailored CV JSON
                 └── ReportLab: renders PDF with photo + company logos
                          └──► output/cvs/cv_<n>_<company>_<title>.pdf
 ```
@@ -81,11 +76,14 @@ application_bot/
 │   ├── Photo.png          # Your profile photo (used in CV header)
 │   └── <Company>.png      # Employer logos (matched by company name)
 ├── output/
-│   ├── linkedin_listings_<timestamp>.xlsx
+│   ├── linkedin_listings_<timestamp>.xlsx  # Raw scraped listings snapshot
+│   ├── linkedin_tracker.xlsx               # Application status tracker
+│   ├── mismatch_log.json                   # Jobs Claude found were not a profile fit
 │   └── cvs/
 │       └── cv_<n>_<company>_<title>.pdf
-├── linkedin_scraper.py    # Phase 1: scrape + Phase 2 trigger
-├── cv_generator.py        # Phase 2: description fetch + Claude + PDF
+├── linkedin_scraper.py    # Entry point: scrape + evaluate + apply loop
+├── cv_generator.py        # CV generation: description fetch + Claude + PDF render
+├── apply_bot.py           # Easy Apply automation + tracker + mismatch log helpers
 ├── setup_profile.py       # One-time profile configurator
 ├── requirements.txt
 ├── .env                   # API key (never commit)
@@ -254,17 +252,18 @@ python linkedin_scraper.py
 1. All existing Chrome processes are killed and a fresh instance is launched with CDP on port `9222`
 2. The script connects to Chrome via Playwright CDP
 3. If LinkedIn requires login, you are prompted to log in manually in the browser, then press Enter
-4. For each role listed in `preferences.roles`, a LinkedIn jobs search URL is built and opened
-5. Job cards are scraped until `JOBS_LIMIT` is reached (default: `3` for testing — change in `linkedin_scraper.py` line `345`)
-6. Each job is checked against `exclude_companies` and `exclude_keywords`; skipped jobs are logged
-7. For each accepted job, `cv_generator.py` is called:
-   - The bot navigates to the job's URL and expands the "About the job" section
-   - The full job description text is extracted
-   - Claude (`claude-opus-4-6`) receives your master CV + the job description and returns a tailored CV as JSON
-   - ReportLab renders the JSON into a professional A4 PDF with your photo and employer logos
-8. A formatted Excel file with all listings is saved to `output/`
-
-> **To run in production mode** (more than 3 jobs), change `JOBS_LIMIT = 3` to your desired number in `linkedin_scraper.py`.
+4. For each role in `preferences.roles`, a LinkedIn jobs search URL is opened and cards are scraped (up to 25 per search)
+5. Jobs are filtered against `exclude_companies` and `exclude_keywords`; skipped jobs are logged
+6. **For each job card, immediately:**
+   - Skip if already recorded in `linkedin_tracker.xlsx` (previously applied)
+   - Skip if recorded in `mismatch_log.json` (Claude previously found it was not a fit)
+   - Navigate to the job URL and extract the full description
+   - Ask Claude to evaluate fit and generate a tailored CV — if the job is a mismatch it is logged to `mismatch_log.json` and skipped
+   - Render a tailored PDF CV with your photo and employer logos
+   - Submit via LinkedIn Easy Apply, with Claude answering any free-text form fields
+   - Record the application in `linkedin_tracker.xlsx`
+7. The loop stops once `max_applications_per_session` successful applications have been submitted (default: `15`, set in `config/profile.json`)
+8. A formatted Excel snapshot of all scraped listings is saved to `output/`
 
 ---
 
@@ -272,8 +271,10 @@ python linkedin_scraper.py
 
 | File | Description |
 |---|---|
-| `output/linkedin_listings_<timestamp>.xlsx` | All scraped job listings with hyperlinks, filterable in Excel |
-| `output/cvs/cv_<n>_<company>_<title>.pdf` | Tailored A4 CV for each job |
+| `output/linkedin_listings_<timestamp>.xlsx` | Read-only snapshot of all scraped job listings with hyperlinks |
+| `output/linkedin_tracker.xlsx` | Live application tracker — status, CV path, timestamp per job |
+| `output/mismatch_log.json` | Persistent log of jobs Claude found were not a profile fit; auto-skipped on future runs |
+| `output/cvs/cv_<n>_<company>_<title>.pdf` | Tailored A4 CV for each applied job |
 
 **PDF layout:**
 - Header: profile photo (left) · name, contact info, clickable links (right)
@@ -287,26 +288,32 @@ python linkedin_scraper.py
 ## Workflow Diagram
 
 ```
-You                  setup_profile.py         linkedin_scraper.py        cv_generator.py
- │                          │                         │                        │
- ├─ edit base.md ──────────►│                         │                        │
- ├─ run setup ─────────────►│                         │                        │
- │                          ├─ parse base.md           │                        │
- │                          ├─ prompt review           │                        │
- │                          └─ write profile.json ────►│                        │
- │                                                     │                        │
- ├─ run scraper ───────────────────────────────────────►                        │
- │                                                     ├─ launch Chrome         │
- │                                                     ├─ search LinkedIn       │
- │                                                     ├─ scrape job cards      │
- │                                                     ├─ filter jobs           │
- │                                                     ├─ save Excel            │
- │                                                     └─ for each job ────────►│
- │                                                                              ├─ fetch description
- │                                                                              ├─ call Claude API
- │                                                                              └─ render PDF
+You                  setup_profile.py         linkedin_scraper.py          cv_generator.py / apply_bot.py
+ │                          │                         │                               │
+ ├─ edit base.md ──────────►│                         │                               │
+ ├─ run setup ─────────────►│                         │                               │
+ │                          ├─ parse base.md           │                               │
+ │                          ├─ prompt review           │                               │
+ │                          └─ write profile.json ────►│                               │
+ │                                                     │                               │
+ ├─ run scraper ───────────────────────────────────────►                               │
+ │                                                     ├─ launch Chrome                │
+ │                                                     ├─ search LinkedIn              │
+ │                                                     │                               │
+ │                                                     ├─ [job card 1]                 │
+ │                                                     │   ├─ check tracker / mismatch │
+ │                                                     │   └─ process ────────────────►│
+ │                                                     │                               ├─ fetch description
+ │                                                     │                               ├─ call Claude (fit check + CV)
+ │                                                     │                               ├─ render PDF
+ │                                                     │                               └─ Easy Apply → tracker
+ │                                                     │                               │
+ │                                                     ├─ [job card 2] ───────────────►│ (same)
+ │                                                     │   ...                         │
+ │                                                     ├─ stop at max_applications     │
+ │                                                     └─ save Excel snapshot          │
  │
- └─ review output/cvs/*.pdf
+ └─ review output/cvs/*.pdf  and  output/linkedin_tracker.xlsx
 ```
 
 ---
@@ -315,7 +322,8 @@ You                  setup_profile.py         linkedin_scraper.py        cv_gene
 
 | What | Where | How |
 |---|---|---|
-| Number of jobs to process | `linkedin_scraper.py` line `345` | Change `JOBS_LIMIT = 3` |
+| Max applications per session | `config/profile.json` → `preferences.max_applications_per_session` | Change from default `15` |
+| Cards scraped per search | `linkedin_scraper.py` → `scrape_cards(max_per_search=25)` | Change the default argument |
 | Target roles | `config/profile.json` → `preferences.roles` | Edit list or use `setup_profile.py` |
 | Excluded companies | `config/profile.json` → `preferences.exclude_companies` | Add/remove company names |
 | Easy Apply only | `config/profile.json` → `job_sources.linkedin.easy_apply_only` | Set `true` / `false` |
@@ -333,7 +341,7 @@ You                  setup_profile.py         linkedin_scraper.py        cv_gene
 - If the script crashes mid-run, manually close all Chrome windows and retry
 
 **LinkedIn asks for login every run**
-- The script uses a temporary Chrome profile at `C:\Temp\chrome-debug`
+- The script uses a persistent Chrome profile at `C:\Temp\chrome-debug`
 - Log in once; Chrome will persist the session in that directory across runs
 
 **Job description is empty**
@@ -347,3 +355,7 @@ You                  setup_profile.py         linkedin_scraper.py        cv_gene
 **PDF looks misaligned / logos wrong**
 - Ensure logo PNG filenames match company names in `profile.json` (case-insensitive partial match)
 - Photo should be a clean portrait image without heavy transparency around the edges
+
+**A good job was skipped unexpectedly**
+- Check `output/mismatch_log.json` — the job may have been logged as a mismatch in a previous run
+- Remove that URL entry from the file to allow the bot to re-evaluate it
