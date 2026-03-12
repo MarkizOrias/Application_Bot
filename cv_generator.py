@@ -26,6 +26,7 @@ from reportlab.lib.units import cm
 from reportlab.platypus import (
     HRFlowable,
     Image as RLImage,
+    KeepTogether,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -565,22 +566,27 @@ def render_cv_pdf(cv: dict, profile: dict, job: dict, output_path: Path) -> None
             entries = list(group)
             logo_path = _find_logo(company)
 
-            # Logo once above all entries for this company
-            if logo_path:
-                story.append(_scaled_image(logo_path, height_cm=0.85))
-                story.append(Spacer(1, 3))
+            for i, exp in enumerate(entries):
+                # Build the entire entry as a single block so it moves as a unit
+                block = []
 
-            for exp in entries:
-                story.append(Paragraph(exp.get("title", ""), styles["job_title"]))
-                story.append(
+                # Logo only with the first entry for this company
+                if i == 0 and logo_path:
+                    block.append(_scaled_image(logo_path, height_cm=0.85))
+                    block.append(Spacer(1, 3))
+
+                block.append(Paragraph(exp.get("title", ""), styles["job_title"]))
+                block.append(
                     Paragraph(
                         f"{company}   ·   {exp.get('period', '')}",
                         styles["job_meta"],
                     )
                 )
                 for bullet in exp.get("bullets", []):
-                    story.append(Paragraph(f"• {bullet}", styles["bullet"]))
-                story.append(Spacer(1, 5))
+                    block.append(Paragraph(f"• {bullet}", styles["bullet"]))
+                block.append(Spacer(1, 5))
+
+                story.append(KeepTogether(block))
 
     # --------------------------------------------------------------- Education
     if cv.get("education"):

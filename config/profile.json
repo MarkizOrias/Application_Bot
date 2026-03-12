@@ -16,15 +16,7 @@
     "us": "Authorized"
   },
   "preferences": {
-    "roles": [
-      "Workflow Automation Engineer",
-      "Crypto Operations Analyst",
-      "Data Automation Engineer",
-      "Blockchain Data Analyst",
-      "Web3 Data Analyst",
-      "DeFi Analyst",
-      "Blockchain Operations Engineer"
-    ],
+    "roles": ["Financial Reporting Specialist"],
     "min_salary_usd": 70000,
     "exclude_companies": [
       "UBS",
