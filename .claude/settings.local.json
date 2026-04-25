@@ -11,7 +11,9 @@
       "Bash(pip show playwright pandas openpyxl anthropic reportlab python-dotenv pillow)",
       "Bash(pip freeze)",
       "Bash(python -c \"import ast; ast.parse\\(open\\(''setup_profile.py''\\).read\\(\\)\\); print\\(''setup_profile.py OK''\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\(''setup_profile.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''setup_profile.py OK''\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''setup_profile.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''setup_profile.py OK''\\)\")",
+      "Bash(pip install:*)",
+      "Bash(python career_education_filler.py)"
     ]
   }
 }

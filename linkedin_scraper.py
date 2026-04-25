@@ -56,6 +56,7 @@ CDP_URL = f"http://localhost:{CDP_PORT}"
 def _wait_for_cdp(timeout: float = 15.0) -> bool:
     """Poll the CDP endpoint until Chrome exposes it. Returns True when ready."""
     import urllib.request
+
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -246,7 +247,7 @@ def _enrich_from_panel(page, card, job: dict) -> None:
         print(f"    [warn] Panel read error for '{job.get('title')}': {exc}")
 
 
-def scrape_cards(page, max_per_search: int = 25) -> list[dict]:
+def scrape_cards(page, max_per_search: int = 5) -> list[dict]:
     """Wait for cards, scroll to load more, click each to enrich with description
     and apply-type from the right-hand panel, then return all jobs."""
     jobs = []
@@ -540,9 +541,7 @@ def main() -> None:
             time.sleep(1.5)  # Polite delay between searches
 
         save_tracker(df)
-        print(
-            f"\n[apply] Session complete — {applied_count} application(s) submitted."
-        )
+        print(f"\n[apply] Session complete — {applied_count} application(s) submitted.")
 
         context.close()
 

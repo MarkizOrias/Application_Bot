@@ -3,5 +3,6 @@ openpyxl
 pandas
 Pillow
 playwright
+python-docx
 python-dotenv
 reportlab

@@ -16,20 +16,25 @@
     "us": "Authorized"
   },
   "preferences": {
-    "roles": ["Financial Reporting Specialist"],
-    "min_salary_usd": 70000,
-    "exclude_companies": [
-      "UBS",
-      "Credit Suisse",
-      "State Street",
-      "Accenture",
-      "Capgemini",
-      "Infosys",
-      "Wipro",
-      "TCS"
+    "roles": [
+      "Financial Reporting Specialist",
+      "Securities Reconciliation Specialist",
+      "Banking Operations Specialist",
+      "Trade Support Analyst",
+      "Operations Analyst",
+      "Fintech Operations Engineer",
+      "Process Automation Specialist",
+      "Data Analyst",
+      "Financial Data Engineer",
+      "Settlement & Reconciliation Analyst",
+      "Python Automation Engineer",
+      "Web3 Operations Analyst"
     ],
+    "min_salary_usd": 70000,
+    "exclude_companies": ["UBS"],
+
     "require_remote": true,
-    "max_applications_per_session": 15,
+    "max_applications_per_session": 5,
     "exclude_keywords": [
       "10+ years software engineering",
       "on-site required",
