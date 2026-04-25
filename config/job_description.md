@@ -1,58 +1,53 @@
 ---
-title: Strategy & Operations Manager
-company: Revolut
+title: Channel Operations Business Process Manager
+company: asana
 location: Remote
-url: https://www.revolut.com/en-PL/careers/position/strategy-operations-manager-ff9fb7e1-71ce-4f86-8777-52e83bc1b16a/
+url: https://asana.com/pl/jobs/apply/7728064
 ---
+The  GTM Ops, Strategy, Field Readiness, and Sales Development team at Asana enables growth, efficiency, and performance at scale through the strategic management of revenue operations, systems, strategy + analytics, and enablement. This team encompasses six key areas: Revenue Operations Leadership, Systems & Process Management, Analytics + Insights, Performance Optimization, Enablement + Training, as well as Sales Development-- all focused on driving operational excellence and maximizing sales productivity across the organization.
 
-About Revolut
-People deserve more from their money. More visibility, more control, and more freedom. Since 2015, Revolut has been on a mission to deliver just that. Our powerhouse of products — including spending, saving, investing, exchanging, travelling, and more — help our 70+ million customers get more from their money every day.
+This role is based in our Chicago office with an office-centric hybrid schedule. The standard in-office days are Monday, Tuesday, and Thursday. Most Asanas have the option to work from home on Wednesdays. Working from home on Fridays depends on the type of work you do and the teams with which you partner. If you're interviewing for this role, your recruiter will share more about the in-office requirements.
 
-As we continue our lightning-fast growth,‌ 2 things are essential to our success: our people and our culture. In recognition of our outstanding employee experience, we've been certified as a Great Place to Work™. So far, we have 13,000+ people working around the world, from our offices and remotely, to help us achieve our mission. And we're looking for more brilliant people. People who love building great products, redefining success, and turning the complexity of a chaotic world into the simplicity of a beautiful solution.
+What you’ll achieve:
 
-About the role
-At Revolut, Operations means problem-solving at scale. Our team tackles the company’s toughest challenges with speed, precision, and creativity. They design systems that unlock efficiency and power global growth.
+Spearhead global forecast and pipeline enablement, optimizing our core tech stack across Salesforce, Clari, and Tableau.
+Design and execute a strategic roadmap to achieve best-in-class forecasting accuracy and establish a rigorous, predictable reporting cadence in a multi-SKU environment.
+Take end-to-end ownership of data reconciliation for Opportunity pipeline management, ensuring seamless tracking from creation to Closed Won. Proactively identify and resolve discrepancies to maintain absolute confidence in the numbers.
+Partner closely with the Sales Compensation team to guarantee accurate pipeline crediting and quota attainment tracking.
+Act as a strategic partner to the business, driving tool adoption, standardizing workflows, and leading change management initiatives for all forecasting and pipeline processes.
+About you:
 
-We’re looking for a Strategy & Operations Manager to support the delivery of our People strategy as we continue to scale across Europe. You’ll partner with the Head of HR in Europe to manage and deliver key HR processes for our growing organisation.
+Demonstrates curiosity about AI tools and emerging technologies, with a willingness to learn and leverage them to enhance productivity, collaboration, or decision-making
+7+ years of progressive experience in Revenue Operations, Sales Operations, or GTM Strategy within a fast-paced, high-growth SaaS environment.
+5+ years of deep Salesforce expertise, specifically focused on Opportunity management, forecasting architecture, and rigorous data hygiene.
+3+ years of hands-on Clari administration, CPQ, configuration, and support experience.
+Strong strategic understanding of both Product-Led Growth (PLG) and Sales-Led Growth (SLG) to drive Product Level Forecasting.
+Deep expertise navigating complex SaaS sales motions, with a solid grasp of the unique dynamics across New Business, Renewals, and Expansion.
+Demonstrates curiosity about AI tools and emerging technologies, with a willingness to learn and leverage them to enhance productivity, collaboration, or decision-making.
+At Asana, we're committed to building teams that include a variety of backgrounds, perspectives, and skills, as this is critical to helping us achieve our mission. If you're interested in this role and don't meet every listed requirement, we still encourage you to apply.
 
-Up to shape what's next in finance? Let's get in touch.
+What we’ll offer
 
-What you’ll be doing
-Liaising with teams, such as Legal, Compliance, Risk, and Finance on analysing and defining key HR data
-Running performance and talent cycles (performance review cycles, growth of talent, compensation checks, employee surveys)
-Performing data analytics and reporting to deliver data and reports to key internal and external stakeholders, including governance bodies and regulators
-Managing outsourced service providers, monitoring their performance, and ensuring scope of services are in line with requirements
-Managing a variety of projects, including key change initiatives, new entity set-up, regulatory-related updates, etc.
-Supporting the People function on risk management, quality standards, mapping and documenting processes
-What you'll need
-At least a 2:1 degree from a top university
-4+ years of experience in a fast-paced environment
-Project management skills to effectively plan, coordinate, and deliver people, risk, and reporting initiatives on time and with clear ownership and milestones
-Hands-on coding experience with SQL and Python
-The ability to meet deadlines in a fast-paced environment
-Excellent analytical and organisational skills with impeccable attention to detail
-To be comfortable with a degree of ambiguity that requires analysis and action
-A solid track record of taking ownership and leading complex projects end to end
-A magic skill to break complex problems into smaller ones and to enjoy working with data
-Natural curiosity and a will to make an impact
-Nice to have
-HR or consulting experience
-Compensation range
-Poland: PLN18,000 - PLN20,000 gross monthly*
-Lithuania: €4,100 - €4,500 gross monthly*
-Other locations: Compensation will be discussed during the interview process
-\*Final compensation will be determined based on the candidate's qualifications, skills, and previous experience
+Our comprehensive compensation package plays a big part in how we recognize you for the impact you have on our path to achieving our mission. We believe that compensation should be reflective of the value you create relative to the market value of your role. To ensure pay is fair and not impacted by biases, we're committed to looking at market value which is why we check ourselves and conduct a yearly pay equity audit.
 
-Building a global financial super app isn’t enough. Our Revoluters are a priority, and that’s why in 2021 we launched our inaugural D&I Framework, designed to help us thrive and grow everyday. We're not just doing this because it's the right thing to do. We’re doing it because we know that seeking out diverse talent and creating an inclusive workplace is the way to create exceptional, innovative products and services for our customers. That’s why we encourage applications from people with diverse backgrounds and experiences to join this multicultural, hard-working team.
+For this role, the estimated base salary range is between $137,000 - $156,000. The actual base salary will vary based on various factors, including market and individual qualifications objectively assessed during the interview process. The listed range above is a guideline, and the base salary range for this role may be modified.
 
-Important notice for candidates:
+In addition to base salary, your compensation package may include additional components such as equity, sales incentive pay (for most sales roles), and benefits. If you're interviewing for this role, speak with your recruiter to learn more about the total compensation and benefits for this role.
 
-Job scams are on the rise. Please keep these guidelines in mind when applying for any open roles.
+We strive to provide equitable and competitive benefits packages that support our employees worldwide and include:
 
-• Only apply through official Revolut channels. We don’t use any third-party services or platforms for our recruitment.
+Mental health, wellness & fitness benefits
+Career coaching & support
+Inclusive family building benefits
+Long-term savings or retirement plans
+In-office culinary options to cater to your dietary preferences 
+These are just some of the benefits we offer, and benefits may vary based on role, country, and local regulations. If you're interviewing for this role, speak with your recruiter to learn more about the total compensation and benefits for this role.
 
-• Always double-check the emails you receive. Make sure all communications are being done through official Revolut emails, with an @revolut.com domain.
+#LI-Hybrid #LI-FC1
 
-We won't ask for payment or personal financial information during the hiring process. If anyone does ask you for this, it’s a scam. Report it immediately.
+About us
 
-By submitting this application, I confirm that all the information given by me in this application for employment and any additional documents attached hereto are true to the best of my knowledge and that I have not wilfully suppressed any material fact. I confirm I have disclosed if applicable any previous employment with Revolut. I accept that if any of the information given by me in this application is in any way false or incorrect, my application may be rejected, any offer of employment may be withdrawn or my employment with Revolut may be terminated summarily or I may be dismissed. By submitting this application, I agree that my personal data will be processed in accordance with Revolut's Candidate Privacy Notice
+Asana is a leading platform for human + AI collaboration. Millions of teams around the world rely on Asana to achieve their most important goals, faster. Asana has been named to Fortune's Best Workplaces for 7+ years and recognized by Fast Company, Forbes, and Gartner for excellence in workplace culture and innovation. We offer an exceptional office-centric culture while adopting the best elements of hybrid models to ensure that every one of our global team members can work together effortlessly. With 13+ offices all over the world, we are always looking for individuals who care about building technology that drives positive change in the world and a culture where everyone feels that they belong.
+
+Join Asana’s Talent Network to stay up to date on job opportunities and life at Asana.
+

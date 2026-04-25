@@ -36,6 +36,16 @@ import anthropic
 from docx import Document
 from docx.shared import Cm, Pt, RGBColor
 from dotenv import load_dotenv
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    HRFlowable,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+)
 
 from cv_generator import generate_tailored_cv, render_cv_pdf
 import career_education_filler as cef
@@ -50,6 +60,10 @@ TRACKER_PATH = CV_DIR / "tracker.xlsx"
 BRAND_BLUE = RGBColor(0x0A, 0x66, 0xC2)
 DARK = RGBColor(0x1B, 0x1B, 0x1B)
 MID_GREY = RGBColor(0x55, 0x55, 0x55)
+
+PDF_BRAND_BLUE = colors.HexColor("#0A66C2")
+PDF_DARK = colors.HexColor("#1B1B1B")
+PDF_MID_GREY = colors.HexColor("#555555")
 
 
 # ---------------------------------------------------------------------------
@@ -236,6 +250,118 @@ def save_cover_letter_docx(
 
 
 # ---------------------------------------------------------------------------
+# Cover letter — PDF rendering
+# ---------------------------------------------------------------------------
+
+
+def save_cover_letter_pdf(
+    cover_letter_text: str,
+    profile: dict,
+    job: dict,
+    output_path: Path,
+) -> None:
+    """Render the cover letter as a branded A4 PDF."""
+    personal = profile["personal"]
+
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=A4,
+        rightMargin=2.0 * cm,
+        leftMargin=2.5 * cm,
+        topMargin=2.0 * cm,
+        bottomMargin=2.0 * cm,
+    )
+
+    name_style = ParagraphStyle(
+        "cl_name", fontSize=18, leading=22, textColor=PDF_BRAND_BLUE,
+        fontName="Helvetica-Bold",
+    )
+    contact_style = ParagraphStyle(
+        "cl_contact", fontSize=9, leading=12, textColor=PDF_MID_GREY,
+        fontName="Helvetica",
+    )
+    date_style = ParagraphStyle(
+        "cl_date", fontSize=10, leading=13, textColor=PDF_MID_GREY,
+        fontName="Helvetica",
+    )
+    salutation_style = ParagraphStyle(
+        "cl_sal", fontSize=11, leading=14, textColor=PDF_DARK,
+        fontName="Helvetica-Bold",
+    )
+    body_style = ParagraphStyle(
+        "cl_body", fontSize=11, leading=15, textColor=PDF_DARK,
+        fontName="Helvetica", spaceAfter=10,
+    )
+    closing_style = ParagraphStyle(
+        "cl_closing", fontSize=11, leading=14, textColor=PDF_DARK,
+        fontName="Helvetica",
+    )
+    signature_style = ParagraphStyle(
+        "cl_sig", fontSize=11, leading=14, textColor=PDF_BRAND_BLUE,
+        fontName="Helvetica-Bold",
+    )
+
+    story = [Paragraph(personal["full_name"], name_style), Spacer(1, 2)]
+
+    contact_parts = [
+        personal.get("email", ""),
+        personal.get("phone", ""),
+        personal.get("location", ""),
+    ]
+    if personal.get("linkedin"):
+        contact_parts.append(f'<link href="{personal["linkedin"]}">{personal["linkedin"]}</link>')
+    contact_line = "  |  ".join(p for p in contact_parts if p)
+    story.append(Paragraph(contact_line, contact_style))
+    story.append(Spacer(1, 4))
+
+    story.append(HRFlowable(width="100%", thickness=0.5, color=PDF_BRAND_BLUE,
+                            spaceBefore=2, spaceAfter=10))
+
+    story.append(Paragraph(datetime.now().strftime("%B %d, %Y"), date_style))
+    story.append(Spacer(1, 14))
+
+    story.append(Paragraph(f"Dear Hiring Manager at {job['company']},", salutation_style))
+    story.append(Spacer(1, 10))
+
+    for para_text in cover_letter_text.split("\n\n"):
+        para_text = para_text.strip()
+        if not para_text:
+            continue
+        story.append(Paragraph(para_text.replace("\n", "<br/>"), body_style))
+
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("Sincerely,", closing_style))
+    story.append(Spacer(1, 22))
+    story.append(Paragraph(personal["full_name"], signature_style))
+
+    doc.build(story)
+    print(f"    [cover] Saved PDF -> {output_path.resolve()}")
+
+
+# ---------------------------------------------------------------------------
+# Job description — plain text export
+# ---------------------------------------------------------------------------
+
+
+def save_job_description(job: dict, description: str, output_path: Path) -> None:
+    """Write the parsed job metadata + description to a .txt file."""
+    lines = [
+        f"Title    : {job.get('title', '')}",
+        f"Company  : {job.get('company', '')}",
+        f"Location : {job.get('location', '')}",
+        f"URL      : {job.get('url', '')}",
+        f"Saved    : {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "",
+        "-" * 60,
+        "",
+        description or "(No description available.)",
+        "",
+    ]
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"    [jd] Saved -> {output_path.resolve()}")
+
+
+# ---------------------------------------------------------------------------
 # Career form filler
 # ---------------------------------------------------------------------------
 
@@ -335,24 +461,31 @@ def main() -> None:
 
     cv_path = job_folder / f"{name_slug}_CV.pdf"
     cl_path = job_folder / f"{name_slug}_Cover_Letter.docx"
+    cl_pdf_path = job_folder / f"{name_slug}_Cover_Letter.pdf"
     filler_path = job_folder / f"{name_slug}_Career_Filler.txt"
+    jd_path = job_folder / f"{name_slug}_Job_Description.txt"
 
     # --- Step 1: Tailored CV dict ---
-    print("[1/4] Calling Claude to tailor CV...")
+    print("[1/5] Calling Claude to tailor CV...")
     tailored_cv = generate_tailored_cv(profile, job, description)
 
     # --- Step 2: CV PDF ---
-    print("[2/4] Rendering CV PDF...")
+    print("[2/5] Rendering CV PDF...")
     render_cv_pdf(tailored_cv, profile, job, cv_path)
 
-    # --- Step 3: Cover letter ---
-    print("[3/4] Generating cover letter...")
+    # --- Step 3: Cover letter (DOCX + PDF) ---
+    print("[3/5] Generating cover letter...")
     cover_letter_text = generate_cover_letter(profile, job, description, tailored_cv)
     save_cover_letter_docx(cover_letter_text, profile, job, cl_path)
+    save_cover_letter_pdf(cover_letter_text, profile, job, cl_pdf_path)
 
     # --- Step 4: Career form filler ---
-    print("[4/4] Saving career form filler...")
+    print("[4/5] Saving career form filler...")
     save_career_filler(profile, filler_path)
+
+    # --- Step 5: Job description copy ---
+    print("[5/5] Saving job description...")
+    save_job_description(job, description, jd_path)
 
     # --- Tracker ---
     print("[ + ] Updating application tracker...")
@@ -360,11 +493,13 @@ def main() -> None:
 
     print()
     print("Done.")
-    print(f"  Folder      : {job_folder.resolve()}")
-    print(f"  CV          : {cv_path.name}")
-    print(f"  Cover letter: {cl_path.name}")
-    print(f"  Form filler : {filler_path.name}")
-    print(f"  Tracker     : {TRACKER_PATH.resolve()}")
+    print(f"  Folder          : {job_folder.resolve()}")
+    print(f"  CV              : {cv_path.name}")
+    print(f"  Cover letter    : {cl_path.name}")
+    print(f"  Cover letter PDF: {cl_pdf_path.name}")
+    print(f"  Form filler     : {filler_path.name}")
+    print(f"  Job description : {jd_path.name}")
+    print(f"  Tracker         : {TRACKER_PATH.resolve()}")
 
 
 if __name__ == "__main__":
