@@ -413,15 +413,23 @@ def update_tracker(job: dict, job_folder: Path) -> None:
         from openpyxl import Workbook
         wb = Workbook()
         ws = wb.active
-        ws.append(["Date", "Company", "Job Title", "URL", "Folder", "Status"])
+        ws.append([
+            "Date", "Country", "Post Code", "City",
+            "Company", "Job Title", "URL", "Folder",
+            "Status", "STATUS CHANGE",
+        ])
 
     ws.append([
         datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "",   # Country  — filled by update_rav.py
+        "",   # Post Code — filled by update_rav.py
+        "",   # City      — filled by update_rav.py
         job["company"],
         job["title"],
         job.get("url", ""),
         str(job_folder.resolve()),
-        "",  # status — update manually
+        "APPLIED",  # default status
+        "",          # STATUS CHANGE — update when status changes
     ])
 
     wb.save(TRACKER_PATH)
